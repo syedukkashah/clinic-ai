@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.routes import triage, doctors, appointments, metrics
+from api.routes import triage, doctors, appointments, metrics
 
 app = FastAPI(title="Clinic AI DevOps Project")
 

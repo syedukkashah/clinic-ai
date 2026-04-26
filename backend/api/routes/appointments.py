@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException
-from app.schemas.appointment import AppointmentRequest, AppointmentResponse
-from app.services.triage_agent import analyze_symptoms
-from app.services.doctor_data import DOCTORS
-from app.services.scheduling_agent import assign_doctor
-from app.services.wait_time_model import predict_wait_time
+from schemas.appointments import AppointmentRequest, AppointmentResponse
+from services.triage_agent import analyze_symptoms
+from services.doctor_data import DOCTORS
+from services.scheduling_agent import assign_doctor
+from services.wait_time_model import predict_wait_time
 
 router = APIRouter()
 
