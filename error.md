@@ -7,7 +7,7 @@ Collecting wheel
 Collecting packaging>=24.0 (from wheel)
   Downloading packaging-26.2-py3-none-any.whl.metadata (3.5 kB)
 Downloading setuptools-82.0.1-py3-none-any.whl (1.0 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.0/1.0 MB 106.6 MB/s  0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.0/1.0 MB 73.9 MB/s  0:00:00
 Downloading wheel-0.47.0-py3-none-any.whl (32 kB)
 Downloading packaging-26.2-py3-none-any.whl (100 kB)
 Installing collected packages: setuptools, packaging, wheel
@@ -16,7 +16,7 @@ Successfully installed packaging-26.2 setuptools-82.0.1 wheel-0.47.0
 Looking in indexes: https://download.pytorch.org/whl/cpu
 Collecting torch==2.3.1
   Downloading https://download-r2.pytorch.org/whl/cpu/torch-2.3.1%2Bcpu-cp312-cp312-linux_x86_64.whl (190.4 MB)
-     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 190.4/190.4 MB 147.5 MB/s  0:00:01
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 190.4/190.4 MB 105.5 MB/s  0:00:01
 Collecting filelock (from torch==2.3.1)
   Downloading filelock-3.25.2-py3-none-any.whl.metadata (2.0 kB)
 Collecting typing-extensions>=4.8.0 (from torch==2.3.1)
@@ -39,48 +39,49 @@ Downloading fsspec-2026.2.0-py3-none-any.whl (202 kB)
 Downloading https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl (134 kB)
 Downloading https://download.pytorch.org/whl/markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
 Downloading networkx-3.6.1-py3-none-any.whl (2.1 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 124.2 MB/s  0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 163.0 MB/s  0:00:00
 Downloading sympy-1.14.0-py3-none-any.whl (6.3 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 225.9 MB/s  0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 278.4 MB/s  0:00:00
 Downloading mpmath-1.3.0-py3-none-any.whl (536 kB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 96.9 MB/s  0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 94.5 MB/s  0:00:00
 Installing collected packages: mpmath, typing-extensions, sympy, networkx, MarkupSafe, fsspec, filelock, jinja2, torch
 
 Successfully installed MarkupSafe-3.0.3 filelock-3.25.2 fsspec-2026.2.0 jinja2-3.1.6 mpmath-1.3.0 networkx-3.6.1 sympy-1.14.0 torch-2.3.1+cpu typing-extensions-4.15.0
-Collecting openai-whisper==20240930
-  Downloading openai-whisper-20240930.tar.gz (800 kB)
-     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 800.5/800.5 kB 73.2 MB/s  0:00:00
-  Preparing metadata (pyproject.toml): started
-  Preparing metadata (pyproject.toml): finished with status 'error'
+Collecting git+https://github.com/openai/whisper.git@v20240930
+  Cloning https://github.com/openai/whisper.git (to revision v20240930) to /tmp/pip-req-build-t5l9u8e9
+  Running command git clone --filter=blob:none --quiet https://github.com/openai/whisper.git /tmp/pip-req-build-t5l9u8e9
+  Running command git checkout -q 25639fc17ddc013d56c594bfbf7644f2185fad84
+  Resolved https://github.com/openai/whisper.git to commit 25639fc17ddc013d56c594bfbf7644f2185fad84
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'error'
   error: subprocess-exited-with-error
   
-  × Preparing metadata (pyproject.toml) did not run successfully.
+  × Getting requirements to build wheel did not run successfully.
   │ exit code: 1
-  ╰─> [17 lines of output]
+  ╰─> [20 lines of output]
       Traceback (most recent call last):
         File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 389, in <module>
           main()
         File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 373, in main
           json_out["return_val"] = hook(**hook_input["kwargs"])
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 175, in prepare_metadata_for_build_wheel
-          return hook(metadata_directory, config_settings)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/setuptools/build_meta.py", line 380, in prepare_metadata_for_build_wheel
+        File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 143, in get_requires_for_build_wheel
+          return hook(config_settings)
+                 ^^^^^^^^^^^^^^^^^^^^^
+        File "/tmp/pip-build-env-m2_x_cdj/overlay/lib/python3.12/site-packages/setuptools/build_meta.py", line 333, in get_requires_for_build_wheel
+          return self._get_build_requires(config_settings, requirements=[])
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/tmp/pip-build-env-m2_x_cdj/overlay/lib/python3.12/site-packages/setuptools/build_meta.py", line 301, in _get_build_requires
           self.run_setup()
-        File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/setuptools/build_meta.py", line 520, in run_setup
+        File "/tmp/pip-build-env-m2_x_cdj/overlay/lib/python3.12/site-packages/setuptools/build_meta.py", line 520, in run_setup
           super().run_setup(setup_script=setup_script)
-        File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/setuptools/build_meta.py", line 317, in run_setup
+        File "/tmp/pip-build-env-m2_x_cdj/overlay/lib/python3.12/site-packages/setuptools/build_meta.py", line 317, in run_setup
           exec(code, locals())
         File "<string>", line 5, in <module>
       ModuleNotFoundError: No module named 'pkg_resources'
       [end of output]
   
   note: This error originates from a subprocess, and is likely not a problem with pip.
-error: metadata-generation-failed
-
-× Encountered error while generating package metadata.
-╰─> openai-whisper
-
-note: This is an issue with the package mentioned above, not pip.
-hint: See above for details.
+ERROR: Failed to build 'git+https://github.com/openai/whisper.git@v20240930' when getting requirements to build wheel
