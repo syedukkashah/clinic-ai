@@ -6,8 +6,10 @@ WORKDIR /app
 
 # Install system dependencies
 # ffmpeg is required by openai-whisper for audio processing
+# git is required to install whisper from GitHub
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    git \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -16,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 # This MUST be done before installing requirements.txt to satisfy openai-whisper
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir --no-build-isolation openai-whisper==20240930
+    pip install --no-cache-dir git+https://github.com/openai/whisper.git@v20240930
 
 # Copy requirements files
 COPY requirements.txt .
