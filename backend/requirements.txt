@@ -1,9 +1,144 @@
-fastapi
-uvicorn[standard]
-pydantic
-sqlalchemy
-psycopg2-binary
-python-dotenv
-alembic
-pytest
-httpx
+# =============================================================================
+# backend/requirements.txt
+# Production dependencies for:
+#   - FastAPI application (api service)
+#   - Celery workers (worker service)
+#   - Celery beat scheduler (beat service)
+# All three Docker containers are built from ONE Dockerfile using this file.
+# Pin every version. Never use >=. Run `pip install -r requirements.txt` to install.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Web framework & server
+# -----------------------------------------------------------------------------
+setuptools==70.0.0                 # required for building openai-whisper on Python 3.12
+fastapi==0.111.1
+uvicorn[standard]==0.30.1          # [standard] includes websockets + httptools
+python-multipart==0.0.9            # required for UploadFile (voice audio endpoint)
+websockets==12.0                   # WebRTC WebSocket server (/ws/voice/{id})
+
+
+# -----------------------------------------------------------------------------
+# Data validation & settings
+# -----------------------------------------------------------------------------
+pydantic==2.7.4                    # v2 required by FastAPI 0.111+
+pydantic-settings==2.3.4           # BaseSettings for config.py (reads from .env)
+python-dotenv==1.0.1               # loads .env file in dev
+
+
+# -----------------------------------------------------------------------------
+# Database — async PostgreSQL
+# -----------------------------------------------------------------------------
+sqlalchemy==2.0.31                 # async ORM (use AsyncSession, not Session)
+asyncpg==0.29.0                    # async PostgreSQL driver used by SQLAlchemy
+alembic==1.13.1                    # database migrations (M4 only creates versions)
+psycopg2-binary==2.9.9             # sync driver used by alembic env.py only
+
+
+# -----------------------------------------------------------------------------
+# Redis & task queue
+# -----------------------------------------------------------------------------
+redis==5.0.7                       # async Redis client (aioredis API built in since v4)
+celery==5.4.0                      # task queue for scheduling/ops/resolver/retrain tasks
+celery[redis]==5.4.0               # redis as broker + result backend
+
+
+# -----------------------------------------------------------------------------
+# Authentication
+# -----------------------------------------------------------------------------
+python-jose[cryptography]==3.3.0   # JWT creation and verification (core/auth.py)
+passlib[bcrypt]==1.7.4             # password hashing (patient/admin accounts)
+
+
+# -----------------------------------------------------------------------------
+# LLM providers — all accessed through LLMRouter (services/llm_router.py)
+# Never import these directly in agents. Always go through llm_router.call().
+# -----------------------------------------------------------------------------
+groq==0.9.0                        # Groq SDK: Llama 3.1 8B (extraction) + Whisper STT
+google-generativeai==0.7.2         # Gemini 1.5 Flash (primary reasoning + Urdu)
+openai==1.35.7                     # Used for Together AI + OpenRouter via custom base_url
+                                   # Together AI: base_url="https://api.together.xyz/v1"
+                                   # OpenRouter:  base_url="https://openrouter.ai/api/v1"
+httpx==0.27.0                      # async HTTP client: calls ml_service /predict/* endpoints
+                                   # and Prometheus HTTP API (query_prometheus tool)
+
+
+# -----------------------------------------------------------------------------
+# Voice — STT (Speech-to-Text)
+# Primary: Groq Whisper API (groq SDK above, no extra package needed)
+# Fallback: local openai-whisper (lazy-loaded on first use, NOT at import time)
+# -----------------------------------------------------------------------------
+openai-whisper==20240930           # local STT fallback (installed via Dockerfile/CI with --no-build-isolation)
+                                   # IMPORTANT: requires torch (see torch section below)
+ffmpeg-python==0.2.0               # whisper requires ffmpeg for audio decoding
+                                   # also install system ffmpeg: apt-get install -y ffmpeg
+                                   # (add to Dockerfile RUN step)
+
+
+# -----------------------------------------------------------------------------
+# PyTorch — required by openai-whisper local fallback
+# CPU-only build keeps the Docker image ~2GB smaller than GPU build.
+# Install separately with the CPU index URL — do NOT just pip install torch.
+# In Dockerfile, add this BEFORE `pip install -r requirements.txt`:
+#   RUN pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+# Then requirements.txt handles everything else.
+# Listing here as documentation only — actual install is in Dockerfile.
+# torch==2.3.1+cpu  <-- installed via Dockerfile, not directly from this file
+# -----------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
+# Voice — TTS (Text-to-Speech)
+# Microsoft Edge TTS: completely free, no API key, no account required.
+# Voices used: ur-PK-UzmaNeural (Urdu), en-US-JennyNeural (English)
+# -----------------------------------------------------------------------------
+edge-tts==6.1.9
+
+
+# -----------------------------------------------------------------------------
+# Voice — language detection
+# Used by detect_language() in services/lang_detect.py
+# Returns "en" or "ur". Demo rule: only use clean EN or UR — not Urdish.
+# -----------------------------------------------------------------------------
+langdetect==1.0.9
+
+
+# -----------------------------------------------------------------------------
+# Telephony — Twilio (real PSTN phone calls)
+# Used in api/routes/twilio_voice.py
+# Trial account: $15 credit. Configure TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN in .env
+# -----------------------------------------------------------------------------
+twilio==9.2.3
+
+
+# -----------------------------------------------------------------------------
+# Monitoring — Prometheus metrics
+# Used in every service file that emits custom metrics.
+# prometheus-fastapi-instrumentator auto-instruments all FastAPI endpoints.
+# -----------------------------------------------------------------------------
+prometheus-client==0.20.0
+prometheus-fastapi-instrumentator==6.1.0
+
+
+# -----------------------------------------------------------------------------
+# AIOps — Isolation Forest anomaly detector
+# Used in aiops/anomaly_detector.py
+# Model serialized with joblib, stored in /models/ Docker volume.
+# -----------------------------------------------------------------------------
+scikit-learn==1.5.0
+scipy==1.13.1                      # compute_kl_divergence() in mlops/drift_detector.py
+numpy==1.26.4                      # shared by scikit-learn, scipy, and feature computations
+joblib==1.4.2                      # load/save anomaly detector model (.pkl file)
+
+
+# -----------------------------------------------------------------------------
+# Async utilities
+# -----------------------------------------------------------------------------
+aiofiles==23.2.1                   # async file read/write for voice temp files
+
+
+# -----------------------------------------------------------------------------
+# Serialization
+# -----------------------------------------------------------------------------
+orjson==3.10.5                     # fast JSON (used by FastAPI response serialization)
