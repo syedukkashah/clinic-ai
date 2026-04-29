@@ -1,0 +1,49 @@
+# =============================================================================
+# backend/requirements-dev.txt
+# Development and testing dependencies.
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+# NOT included in production Docker image (dev stage only).
+# =============================================================================
+
+-r requirements.txt                # include all production deps
+
+
+# -----------------------------------------------------------------------------
+# Testing framework
+# -----------------------------------------------------------------------------
+pytest==8.2.2
+pytest-asyncio==0.23.7             # async test support (all our tests are async)
+pytest-cov==5.0.0                  # coverage reports — CI fails if coverage drops below 60%
+anyio[trio]==4.4.0                 # async test runner backend for pytest-asyncio
+
+
+# -----------------------------------------------------------------------------
+# HTTP test client
+# -----------------------------------------------------------------------------
+httpx==0.27.0                      # async test client for FastAPI (httpx.AsyncClient)
+                                   # also used in production (listed in requirements.txt too)
+                                   # pin to same version in both files
+
+
+# -----------------------------------------------------------------------------
+# Test data generation
+# -----------------------------------------------------------------------------
+faker==25.9.1                      # generates realistic fake names, emails, dates for fixtures
+                                   # used in tests/conftest.py and ml_service/data/generate_synthetic.py
+
+
+# -----------------------------------------------------------------------------
+# Code quality — same versions as .pre-commit-config.yaml
+# Keep these in sync manually if you update pre-commit hook versions.
+# -----------------------------------------------------------------------------
+ruff==0.4.9                        # linter — CI runs: ruff check .
+black==24.4.2                      # formatter — CI runs: black --check .
+pre-commit==3.7.1                  # installs git hooks — run `pre-commit install` once after clone
+
+
+# -----------------------------------------------------------------------------
+# Type checking (optional but recommended for M1/M4 who own shared interfaces)
+# -----------------------------------------------------------------------------
+mypy==1.10.1
+types-redis==4.6.0.20240425
+types-python-jose==3.3.4.20240106
