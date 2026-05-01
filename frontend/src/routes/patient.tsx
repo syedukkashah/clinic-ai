@@ -40,6 +40,8 @@ import {
   type ContactChannel,
   type PatientLang,
 } from "@/services/patientAgentService";
+import { getAdminPortalUrl, getPortal } from "@/lib/portal";
+import { publishPortalEvent } from "@/lib/portalBus";
 
 export const Route = createFileRoute("/patient")({
   component: PatientPage,
@@ -58,6 +60,7 @@ const QUICK: Record<PatientLang, string[]> = {
 };
 
 function PatientPage() {
+  const portal = getPortal();
   const [lang, setLang] = useState<PatientLang>("en");
   const [msgs, setMsgs] = useState<Msg[]>([
     {
@@ -199,6 +202,12 @@ function PatientPage() {
         channel: contactChannel,
         message: contactMessage,
       });
+      publishPortalEvent({
+        type: "patient:contact",
+        ticketId: res.ticketId,
+        channel: contactChannel,
+        message: contactMessage,
+      });
       toast.success(lang === "ur" ? "بھیج دیا گیا" : "Sent", {
         description: `${res.confirmationText} (${res.ticketId})`,
       });
@@ -226,7 +235,11 @@ function PatientPage() {
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" asChild>
-              <Link to="/login">Admin login</Link>
+              {portal === "patient" ? (
+                <a href={getAdminPortalUrl()}>Admin login</a>
+              ) : (
+                <Link to="/login">Admin login</Link>
+              )}
             </Button>
           </div>
         </div>

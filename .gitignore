@@ -61,6 +61,8 @@ pnpm-debug.log*
 .parcel-cache/
 
 frontend/dist/
+frontend/dist-admin/
+frontend/dist-patient/
 frontend/.vite/
 frontend/.cache/
 frontend/.turbo/

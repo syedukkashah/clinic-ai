@@ -17,11 +17,13 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listAlerts } from "@/services/alertsService";
 import { getMetrics } from "@/services/opsService";
 import type { User } from "@/lib/mockData";
+import { getPortal } from "@/lib/portal";
+import { subscribePortalEvents } from "@/lib/portalBus";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -35,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [patientOnline, setPatientOnline] = useState(false);
   const { data: alerts = [] } = useQuery({
     queryKey: ["alerts"],
     queryFn: listAlerts,
@@ -54,6 +57,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const dotClass = degraded ? "bg-warning" : "bg-success";
   const loc = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (getPortal() !== "admin") return;
+    let lastSeen = 0;
+    const unsub = subscribePortalEvents((event) => {
+      if (event.type === "presence" && event.portal === "patient") {
+        lastSeen = Date.now();
+        setPatientOnline(true);
+      }
+    });
+    const t = window.setInterval(() => {
+      setPatientOnline(Date.now() - lastSeen < 12_000);
+    }, 2000);
+    return () => {
+      unsub();
+      window.clearInterval(t);
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen">
@@ -126,6 +147,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="hidden md:flex items-center gap-2 text-sm">
                 <span className={`size-2 rounded-full ${dotClass} animate-pulse`} />
                 <span className="text-muted-foreground">{statusLabel}</span>
+                <span className="mx-1 text-muted-foreground/40">·</span>
+                <span className="text-muted-foreground">
+                  Patient portal {patientOnline ? "online" : "offline"}
+                </span>
               </div>
             </div>
             <div className="flex items-center gap-2">

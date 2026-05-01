@@ -5,9 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:admin": "vite dev --mode admin",
+    "dev:patient": "vite dev --mode patient",
     "build": "vite build",
+    "build:admin": "vite build --mode admin --outDir dist-admin",
+    "build:patient": "vite build --mode patient --outDir dist-patient",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "preview:admin": "vite preview --mode admin --outDir dist-admin",
+    "preview:patient": "vite preview --mode patient --outDir dist-patient",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
