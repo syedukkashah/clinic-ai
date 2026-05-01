@@ -1,0 +1,109 @@
+# =============================================================================
+# ml_service/requirements.txt
+# Production dependencies for the ML prediction service.
+# This is a SEPARATE Docker image from the backend.
+# It does NOT contain: Celery, Twilio, Edge TTS, Groq, Gemini, Prometheus instrumentation.
+# It DOES contain: XGBoost, MLflow, pandas, SQLAlchemy (to read DB for training).
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Web framework & server
+# Same FastAPI + uvicorn as backend but this is a standalone service on port 8001.
+# -----------------------------------------------------------------------------
+fastapi==0.111.1
+uvicorn[standard]==0.30.1
+pydantic==2.7.4
+pydantic-settings==2.3.4
+python-dotenv==1.0.1
+
+
+# -----------------------------------------------------------------------------
+# ML core — both models use XGBoost
+# Model 1: Wait time prediction (regression)
+# Model 2: Patient load forecasting (regression, time-series features)
+# -----------------------------------------------------------------------------
+xgboost==2.0.3
+scikit-learn==1.5.0                # feature pipeline transforms, metrics, IsolationForest baseline
+numpy==1.26.4
+scipy==1.13.1                      # compute_kl_divergence() in drift check called via /internal/retrain
+
+
+# -----------------------------------------------------------------------------
+# Data processing — feature engineering and synthetic data generation
+# Feature pipelines in models/feature_pipelines/ are used by BOTH training AND inference.
+# This is critical: the exact same transforms must run at training time and serving time.
+# Never transform features differently between training and inference.
+# -----------------------------------------------------------------------------
+pandas==2.2.2
+faker==25.9.1                      # data/generate_synthetic.py (synthetic dataset generation)
+
+
+# -----------------------------------------------------------------------------
+# MLflow — experiment tracking + model registry
+# Runs as a separate Docker service (mlflow container), but ml_service connects to it.
+# MLFLOW_TRACKING_URI env var points to http://mlflow:5000 inside Docker network.
+# -----------------------------------------------------------------------------
+mlflow==2.14.1                     # experiment tracking + model registry
+                                   # xgboost autolog works automatically via mlflow.xgboost
+                                   # no [extras] needed — xgboost is already listed above
+
+
+# -----------------------------------------------------------------------------
+# Database access — ML service reads the DB to pull training data
+# Uses SYNC SQLAlchemy for training scripts (simpler than async for batch jobs).
+# Uses ASYNC SQLAlchemy for FastAPI endpoints (prediction logging).
+# -----------------------------------------------------------------------------
+sqlalchemy==2.0.31
+asyncpg==0.29.0                    # async driver for FastAPI prediction logging endpoint
+psycopg2-binary==2.9.9             # sync driver for training scripts (pandas read_sql)
+
+
+# -----------------------------------------------------------------------------
+# Model serialization
+# Isolation Forest anomaly model is serialized with joblib (trained by backend's
+# aiops/anomaly_detector.py but the file is shared via Docker volume).
+# -----------------------------------------------------------------------------
+joblib==1.4.2
+
+
+# -----------------------------------------------------------------------------
+# HTTP client
+# ml_service calls back to backend for any coordination (rare).
+# Also used in tests.
+# -----------------------------------------------------------------------------
+httpx==0.27.0
+
+
+# -----------------------------------------------------------------------------
+# Prometheus metrics — ML service exposes its own /metrics endpoint
+# Backend's Prometheus scrapes both backend:8000/metrics and ml_service:8001/metrics
+# -----------------------------------------------------------------------------
+prometheus-client==0.20.0
+prometheus-fastapi-instrumentator==6.1.0
+
+
+# -----------------------------------------------------------------------------
+# Async utilities
+# -----------------------------------------------------------------------------
+aiofiles==23.2.1
+
+
+# -----------------------------------------------------------------------------
+# Serialization
+# -----------------------------------------------------------------------------
+orjson==3.10.5
+
+
+# =============================================================================
+# ml_service dev dependencies (used in ml_service/tests/ and for training scripts)
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+# =============================================================================
+# pytest==8.2.2
+# pytest-asyncio==0.23.7
+# pytest-cov==5.0.0
+# httpx==0.27.0
+# ruff==0.4.9
+# black==24.4.2
+# (keep a requirements-dev.txt in ml_service/ mirroring backend/requirements-dev.txt
+#  minus the agent-specific type stubs)
