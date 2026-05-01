@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -68,3 +69,19 @@ frontend/.wrangler/
 
 backend/.env
 ml_service/.env
+=======
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+.env
+
+# OS / IDE
+.DS_Store
+.vscode/
+
+# Node
+node_modules/
+>>>>>>> origin/dev

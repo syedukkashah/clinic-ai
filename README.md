@@ -58,6 +58,7 @@ You will run **two** servers:
 - Backend on **http://127.0.0.1:8000**
 - Frontend on **http://127.0.0.1:5173**
 
+<<<<<<< HEAD
 ### One-time setup (from scratch)
 
 From the repo root:
@@ -91,12 +92,21 @@ cd ..
 ### Step A — Start the Backend (FastAPI)
 
 1) Open a terminal and go to the backend folder (recommended):
+=======
+### Step A — Start the Backend (FastAPI)
+
+1) Open a terminal and go to the backend folder:
+>>>>>>> origin/dev
 
 ```bash
 cd backend
 ```
 
+<<<<<<< HEAD
 2) Install Python dependencies (skip if you did the one-time setup above):
+=======
+2) Install Python dependencies:
+>>>>>>> origin/dev
 
 ```bash
 python -m pip install -r requirements.txt
@@ -105,7 +115,11 @@ python -m pip install -r requirements.txt
 3) Start the API server:
 
 ```bash
+<<<<<<< HEAD
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+=======
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+>>>>>>> origin/dev
 ```
 
 4) Confirm it’s running:
@@ -116,12 +130,15 @@ python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 To stop the backend, press **Ctrl + C** in that terminal.
 
+<<<<<<< HEAD
 #### Alternative: start backend from repo root (no `cd backend`)
 
 ```bash
 python -m uvicorn main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
 ```
 
+=======
+>>>>>>> origin/dev
 ### Step B — Start the Frontend (Vite)
 
 1) Open a second terminal and go to the frontend folder:
@@ -130,10 +147,17 @@ python -m uvicorn main:app --app-dir backend --reload --host 127.0.0.1 --port 80
 cd frontend
 ```
 
+<<<<<<< HEAD
 2) Install Node dependencies (recommended):
 
 ```bash
 npm ci
+=======
+2) Install Node dependencies:
+
+```bash
+npm install
+>>>>>>> origin/dev
 ```
 
 3) Start the dev server:
@@ -250,6 +274,7 @@ Fix:
 
 ```bash
 cd frontend
+<<<<<<< HEAD
 npm ci
 ```
 
@@ -263,6 +288,12 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 ### 4) Port already in use (8000 or 5173)
+=======
+npm install
+```
+
+### 3) Port already in use (8000 or 5173)
+>>>>>>> origin/dev
 
 Either stop the process using the port, or run on a different port:
 

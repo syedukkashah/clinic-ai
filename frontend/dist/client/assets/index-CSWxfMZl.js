@@ -1,0 +1,1 @@
+import{j as e}from"./index-3WsyyPG4.js";const t=()=>e.jsx("div",{className:"min-h-screen grid place-items-center",children:e.jsxs("div",{className:"text-center",children:[e.jsx("h1",{className:"text-2xl font-bold",children:"MediFlow"}),e.jsx("p",{className:"text-muted-foreground",children:"Redirecting..."})]})});export{t as component};

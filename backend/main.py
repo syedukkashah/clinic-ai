@@ -1,11 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+<<<<<<< HEAD
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 
 from api.routes import alerts, analytics, appointments, auth, chat, doctors, ops, predictions, scheduling
 
 app = FastAPI(title="MediFlow API", version="1.0.0", docs_url=None, redoc_url=None)
+=======
+
+from api.routes import alerts, analytics, appointments, auth, chat, doctors, ops, predictions, scheduling
+
+app = FastAPI(title="MediFlow API", version="1.0.0")
+>>>>>>> origin/dev
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +38,7 @@ def root():
     return {"name": "MediFlow API", "docs": "/docs", "health": "/api/health"}
 
 
+<<<<<<< HEAD
 @app.get("/docs", include_in_schema=False)
 def docs_landing():
     return HTMLResponse(
@@ -61,6 +69,8 @@ def swagger_ui():
     return get_swagger_ui_html(openapi_url=app.openapi_url, title=f"{app.title} - Swagger UI")
 
 
+=======
+>>>>>>> origin/dev
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy", "version": "1.0.0"}
