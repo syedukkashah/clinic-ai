@@ -94,6 +94,73 @@ npm ci
 cd ..
 ```
 
+---
+
+## Run With Docker (dev)
+
+The repo includes a dev Docker Compose file:
+
+- `docker-compose.dev.yml` — starts Postgres, Redis, backend, ml_service, Prometheus, and Grafana
+
+Frontend portals are not containerized in this repo yet (the frontend Dockerfile is empty), so you still run the Admin/Patient portals with `npm run dev:*` as documented above.
+
+### 1) Create `.env`
+
+From the repo root:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set at minimum:
+
+- `POSTGRES_PASSWORD`
+- `JWT_SECRET`
+
+### 2) Build images
+
+From the repo root:
+
+```bash
+docker compose -f docker-compose.dev.yml build
+```
+
+Clean rebuild (no cache):
+
+```bash
+docker compose -f docker-compose.dev.yml build --no-cache
+```
+
+### 3) Start the stack
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### 4) Verify services
+
+- Backend: http://127.0.0.1:8000/api/health
+- Backend docs: http://127.0.0.1:8000/docs
+- ML service: http://127.0.0.1:8001/
+- Prometheus: http://127.0.0.1:9090/
+- Grafana: http://127.0.0.1:3000/
+
+### 5) View logs / stop
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f --tail=200
+```
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+Remove volumes too (wipes Postgres/Grafana data):
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+```
+
 ### Step A — Start the Backend (FastAPI + Portal WS)
 
 ```bash
