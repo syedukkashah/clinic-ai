@@ -29,6 +29,7 @@ ARG BUILD_MODE
 
 COPY --from=build /app/dist-admin/client /tmp/admin
 COPY --from=build /app/dist-patient/client /tmp/patient
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 RUN rm -rf /usr/share/nginx/html/* && \
   if [ "$BUILD_MODE" = "admin" ]; then cp -a /tmp/admin/. /usr/share/nginx/html/; \
