@@ -100,9 +100,7 @@ cd ..
 
 The repo includes a dev Docker Compose file:
 
-- `docker-compose.dev.yml` — starts Postgres, Redis, backend, ml_service, Prometheus, and Grafana
-
-Frontend portals are not containerized in this repo yet (the frontend Dockerfile is empty), so you still run the Admin/Patient portals with `npm run dev:*` as documented above.
+- `docker-compose.dev.yml` — starts Postgres, Redis, backend, ml_service, frontend_admin, frontend_patient, Prometheus, and Grafana
 
 ### 1) Create `.env`
 
@@ -142,6 +140,8 @@ docker compose -f docker-compose.dev.yml up -d
 - Backend: http://127.0.0.1:8000/api/health
 - Backend docs: http://127.0.0.1:8000/docs
 - ML service: http://127.0.0.1:8001/
+- Admin portal: http://127.0.0.1:5173/
+- Patient portal: http://127.0.0.1:5174/patient
 - Prometheus: http://127.0.0.1:9090/
 - Grafana: http://127.0.0.1:3000/
 
