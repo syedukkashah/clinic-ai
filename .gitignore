@@ -70,3 +70,5 @@ frontend/.wrangler/
 
 backend/.env
 ml_service/.env
+ml_service/data/
+ml_service/mlruns/
