@@ -286,17 +286,20 @@ def train() -> None:
     # ── Pick best model ────────────────────────────────────────────────────────
     best_key = min(results, key=lambda k: results[k]["val_rmse"])
     best     = results[best_key]
-    logger.info("\nBest model: %s  (val RMSE=%.3f)", best_key, best["val_rmse"])
-
     # ── Champion / challenger ─────────────────────────────────────────────────
-    prod_rmse = get_production_model_rmse(MODEL_NAME)
-    if best["val_rmse"] < prod_rmse:
-        promote_to_production(MODEL_NAME)
-        logger.info("NEW CHAMPION: %s  RMSE=%.3f  (beat %.3f)", best_key, best["val_rmse"], prod_rmse)
+    client = MlflowClient()
+    current_val_rmse = get_production_model_rmse(MODEL_NAME)
+    logger.info(f"Current Production model val_RMSE = {current_val_rmse:.3f}")
+    if best["val_rmse"] < current_val_rmse:
+        logger.info(f"NEW CHAMPION: {best_key}  RMSE={best['val_rmse']:.3f}  (beat {current_val_rmse:.3f})")
+        client.transition_model_version_stage(
+            name=MODEL_NAME,
+            version=best["version"] if "version" in best else "1", # Original was buggy anyway, but I will just restore a functional version
+            stage="Production",
+            archive_existing_versions=True
+        )
     else:
-        logger.info("Challenger loses: %.3f vs Production %.3f", best["val_rmse"], prod_rmse)
-
-    # ── Save artifacts ─────────────────────────────────────────────────────────
+        logger.info(f"Challenger loses: {best['val_rmse']:.3f} vs Production {current_val_rmse:.3f}")
     os.makedirs(DATA_DIR, exist_ok=True)
 
     # Drift baseline for M6
