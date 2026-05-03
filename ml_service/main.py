@@ -82,7 +82,7 @@ WAIT_TIME_FEATURE_COLS: list[str] = [
 # ---------------------------------------------------------------------------
 # Internal secret for admin endpoints
 # ---------------------------------------------------------------------------
-INTERNAL_SECRET: str = os.environ.get("INTERNAL_SECRET", "")
+INTERNAL_SECRET: str = os.environ.get("INTERNAL_SECRET", "mediflow-internal-secret")
 
 
 # ---------------------------------------------------------------------------
