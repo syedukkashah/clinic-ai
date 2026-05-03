@@ -72,3 +72,4 @@ backend/.env
 ml_service/.env
 ml_service/data/
 ml_service/mlruns/
+ml_service/conftest.py
