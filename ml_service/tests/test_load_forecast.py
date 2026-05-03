@@ -6,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
 with patch("model_loader.mlflow"):
-    from main import app, patient_load_model
+    from main import app
     from mlops.drift_baselines import compute_kl_divergence, load_baseline_distribution
     from load_features import build_load_features
 
@@ -72,7 +72,7 @@ def test_build_load_features_time_split_is_chronological():
 @patch("main.patient_load_model")
 @patch("main.trained_columns", [])
 @patch("main.get_db")
-@patch("main.build_inference_feature_row")
+@patch("load_features.build_inference_feature_row")
 async def test_load_forecast_endpoint_returns_correct_schema(mock_build, mock_get_db, mock_model, mock_version, async_client):
     mock_model.predict.return_value = np.array([3, 4, 7, 8, 6, 5, 4, 3, 4, 5, 6, 5, 4])
     

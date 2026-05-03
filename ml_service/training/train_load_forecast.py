@@ -13,7 +13,7 @@ import mlflow.xgboost
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from load_features import build_load_features
+from load_features import load_daily_load_csv
 from training.model_registry import (
     get_production_model_mae,
     promote_to_production,
@@ -25,30 +25,28 @@ from training.model_registry import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
 
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
-def train_load_forecast_model(data_path: str = "data/appointments.csv") -> dict:
+def train_load_forecast_model(data_path: str = "data/daily_load.csv") -> dict:
     """Trains the XGBoost model for patient load forecasting with hyperparameter tuning."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     setup_experiment("load_forecast_training")
     mlflow.set_experiment("load_forecast_training")
     
     # a. Load data
-    df = pd.read_csv(data_path)
-    
-    # b. Feature Engineering
-    features_df = build_load_features(df)
+    logger.info("Loading and generating dense feature grid...")
+    features_df = load_daily_load_csv(data_path)
     
     if features_df.empty:
         logger.error("No features generated. Check data.")
         return {"mae": float("inf"), "promoted": False, "run_id": None}
     
-    # c. TIME-BASED SPLIT
+    # b. TIME-BASED SPLIT
     sorted_dates = sorted(features_df["scheduled_date"].unique())
     split_date = sorted_dates[int(len(sorted_dates) * 0.85)]
     
-    # d. One-hot encode first on combined dataframe
-    encoded_df = pd.get_dummies(features_df, columns=["doctor_id", "specialty"], drop_first=False)
+    # c. One-hot encode first on combined dataframe
+    encoded_df = pd.get_dummies(features_df, columns=["doctor_id", "specialty", "season"], drop_first=False)
     
     # Now split
     train = encoded_df[encoded_df["scheduled_date"] < split_date]
@@ -65,25 +63,37 @@ def train_load_forecast_model(data_path: str = "data/appointments.csv") -> dict:
     os.makedirs("mlops/baselines", exist_ok=True)
     np.save("mlops/baselines/load_forecast_trained_columns.npy", np.array(trained_columns))
     
-    # e. BASELINE RUN
-    with mlflow.start_run(run_name="baseline_mean") as baseline_run:
+    # d. BASELINE RUNS
+    with mlflow.start_run(run_name="baselines") as baseline_run:
         train_unencoded = features_df[features_df["scheduled_date"] < split_date]
         val_unencoded = features_df[features_df["scheduled_date"] >= split_date]
         
+        # 1. Group mean baseline
         baseline_means = train_unencoded.groupby(["doctor_id", "day_of_week", "hour_of_day"])["patient_count"].mean().reset_index()
-        baseline_means.rename(columns={"patient_count": "baseline_pred"}, inplace=True)
+        baseline_means.rename(columns={"patient_count": "mean_pred"}, inplace=True)
         
         val_with_baseline = val_unencoded.merge(baseline_means, on=["doctor_id", "day_of_week", "hour_of_day"], how="left")
-        val_with_baseline["baseline_pred"] = val_with_baseline["baseline_pred"].fillna(train_unencoded["patient_count"].mean())
+        val_with_baseline["mean_pred"] = val_with_baseline["mean_pred"].fillna(train_unencoded["patient_count"].mean())
         
-        baseline_mae = mean_absolute_error(val_unencoded["patient_count"], val_with_baseline["baseline_pred"])
+        mean_baseline_mae = mean_absolute_error(val_unencoded["patient_count"], val_with_baseline["mean_pred"])
+        
+        # 2. Seasonal lag baseline (last week same slot)
+        val_with_baseline["lag_pred"] = val_with_baseline["lag_1w"].fillna(val_with_baseline["mean_pred"])
+        
+        lag_baseline_mae = mean_absolute_error(val_unencoded["patient_count"], val_with_baseline["lag_pred"])
         
         mlflow.set_tag("model_type", "baseline")
-        mlflow.log_metric("mae", baseline_mae)
-        logger.info(f"Baseline MAE: {baseline_mae:.3f}")
+        mlflow.log_metrics({
+            "mean_baseline_mae": mean_baseline_mae,
+            "lag_baseline_mae": lag_baseline_mae
+        })
+        logger.info(f"Group Mean Baseline MAE: {mean_baseline_mae:.3f}")
+        logger.info(f"Seasonal Lag Baseline MAE: {lag_baseline_mae:.3f}")
+        
+        baseline_mae = min(mean_baseline_mae, lag_baseline_mae)
 
-    # f. XGBOOST RUN with Hyperparameter Tuning
-    with mlflow.start_run(run_name="xgboost_load_forecast") as active_run:
+    # e. XGBOOST RUN with Simple Grid Search (proven effective neighborhood)
+    with mlflow.start_run(run_name="xgboost_load_forecast_final") as active_run:
         param_grid = {
             'max_depth': [3, 5, 7],
             'learning_rate': [0.01, 0.05, 0.1],
@@ -92,15 +102,16 @@ def train_load_forecast_model(data_path: str = "data/appointments.csv") -> dict:
             'colsample_bytree': [0.8, 1.0]
         }
         
-        logger.info("Starting hyperparameter tuning...")
-        xgb_model = xgb.XGBRegressor(objective="reg:squarederror", random_state=42)
+        logger.info("Starting final grid search...")
+        xgb_model = xgb.XGBRegressor(objective="count:poisson", random_state=42)
         
-        # Simple grid search on the training set
+        tscv = TimeSeriesSplit(n_splits=3)
+        
         grid_search = GridSearchCV(
             estimator=xgb_model,
             param_grid=param_grid,
-            cv=3,
-            scoring='neg_mean_absolute_error',
+            cv=tscv,
+            scoring='neg_mean_poisson_deviance',
             verbose=1,
             n_jobs=-1
         )
@@ -127,19 +138,19 @@ def train_load_forecast_model(data_path: str = "data/appointments.csv") -> dict:
             "val_rows": len(X_val)
         })
         mlflow.log_param("split_date", split_date)
-        mlflow.set_tag("model_type", "xgboost_load_forecast_tuned")
+        mlflow.set_tag("model_type", "xgboost_load_forecast_final")
         
         importances = {k: float(v) for k, v in zip(X_train.columns, model.feature_importances_)}
-        top_features = dict(sorted(importances.items(), key=lambda item: item[1], reverse=True)[:10])
+        top_features = dict(sorted(importances.items(), key=lambda item: item[1], reverse=True)[:15])
         mlflow.log_dict(top_features, "feature_importance.json")
         
-        # g. Register model
+        # f. Register model
         mlflow.xgboost.log_model(
             model, "model",
             registered_model_name=LOAD_FORECAST_MODEL
         )
         
-        # h. Champion/challenger
+        # g. Champion/challenger
         current_mae = get_production_model_mae(LOAD_FORECAST_MODEL)
         if mae < current_mae:
             promote_to_production(LOAD_FORECAST_MODEL)
@@ -149,7 +160,7 @@ def train_load_forecast_model(data_path: str = "data/appointments.csv") -> dict:
             promoted = False
             print(f"Challenger lost. MAE={mae:.3f} did not beat {current_mae:.3f}")
             
-        # i. ALWAYS save drift baseline
+        # h. ALWAYS save drift baseline
         np.save(f"mlops/baselines/{LOAD_FORECAST_MODEL}_baseline.npy", val_predictions)
         stats = {
             "mean": float(val_predictions.mean()),
@@ -168,4 +179,3 @@ def train_load_forecast_model(data_path: str = "data/appointments.csv") -> dict:
 if __name__ == "__main__":
     result = train_load_forecast_model()
     print(result)
-

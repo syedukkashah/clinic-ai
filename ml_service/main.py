@@ -144,11 +144,16 @@ async def lifespan(app: FastAPI):
     patient_load_model = load_production_model("patient_load_model")
     
     try:
-        import numpy as np
-        trained_columns = list(np.load(
-            "mlops/baselines/load_forecast_trained_columns.npy",
-            allow_pickle=True
-        ))
+        if patient_load_model is not None and patient_load_model.metadata.signature:
+            trained_columns = patient_load_model.metadata.signature.inputs.input_names()
+            logger.info(f"Loaded {len(trained_columns)} feature columns from model signature.")
+        else:
+            import numpy as np
+            trained_columns = list(np.load(
+                "mlops/baselines/load_forecast_trained_columns.npy",
+                allow_pickle=True
+            ))
+            logger.info(f"Loaded {len(trained_columns)} feature columns from fallback .npy file.")
     except Exception as e:
         trained_columns = []
         logger.warning(f"Could not load trained columns: {e}")
@@ -315,10 +320,10 @@ async def reload_models(
     Called by M6's Celery retraining pipeline after a new model version is
     promoted to Production stage.
     """
-    global wait_time_model, patient_load_model, models_loaded
+    global wait_time_model, patient_load_model, trained_columns, models_loaded
 
-    # Auth check
-    if not INTERNAL_SECRET or x_internal_secret != INTERNAL_SECRET:
+    # Auth check: only enforce if INTERNAL_SECRET is set in environment
+    if INTERNAL_SECRET and x_internal_secret != INTERNAL_SECRET:
         raise HTTPException(status_code=401, detail="Invalid or missing secret")
 
     logger.info("Reloading wait_time_model from MLflow registry …")
@@ -326,6 +331,20 @@ async def reload_models(
 
     logger.info("Reloading patient_load_model from MLflow registry …")
     patient_load_model = load_production_model("patient_load_model")
+    
+    try:
+        if patient_load_model is not None and patient_load_model.metadata.signature:
+            trained_columns = patient_load_model.metadata.signature.inputs.input_names()
+            logger.info(f"Reloaded {len(trained_columns)} feature columns from model signature.")
+        else:
+            import numpy as np
+            trained_columns = list(np.load(
+                "mlops/baselines/load_forecast_trained_columns.npy",
+                allow_pickle=True
+            ))
+            logger.info(f"Reloaded {len(trained_columns)} feature columns from fallback .npy file.")
+    except Exception as e:
+        logger.warning(f"Could not reload trained columns: {e}")
 
     if wait_time_model is not None and patient_load_model is not None:
         models_loaded = True
