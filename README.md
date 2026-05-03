@@ -96,70 +96,141 @@ cd ..
 
 ---
 
-## Run With Docker (dev)
+## Run With Docker (dev) — Full Guide
 
-The repo includes a dev Docker Compose file:
+The repo includes `docker-compose.dev.yml` which starts **all services**: Postgres, Redis, Backend, ML Service, Frontend Admin, Frontend Patient, Prometheus, and Grafana.
 
-- `docker-compose.dev.yml` — starts Postgres, Redis, backend, ml_service, frontend_admin, frontend_patient, Prometheus, and Grafana
+### Prerequisites
 
-### 1) Create `.env`
+- **Docker Desktop** installed and running (Windows/macOS) or Docker Engine + Compose plugin (Linux)
+- At least **4 GB RAM** allocated to Docker (the frontend Vite build is memory-intensive)
 
-From the repo root:
+### Step 1 — Create `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set at minimum:
+Edit `.env` and set **at minimum**:
 
-- `POSTGRES_PASSWORD`
-- `JWT_SECRET`
-
-### 2) Build images
-
-From the repo root:
-
-```bash
-docker compose -f docker-compose.dev.yml build
+```dotenv
+POSTGRES_PASSWORD=changeme123
+JWT_SECRET=some-long-random-string
 ```
 
-Clean rebuild (no cache):
+Optional (for AI features): `GEMINI_API_KEYS`, `GROQ_API_KEYS`, `TOGETHER_API_KEYS`
+
+### Step 2 — Build & start everything
+
+From the **repo root**:
 
 ```bash
-docker compose -f docker-compose.dev.yml build --no-cache
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-### 3) Start the stack
+> First build takes 3–5 minutes (downloads base images + npm install + Vite build).
 
-```bash
-docker compose -f docker-compose.dev.yml up -d
-```
+### Step 3 — Verify services
 
-### 4) Verify services
+| Service | URL |
+|---------|-----|
+| Backend API | http://127.0.0.1:8000/api/health |
+| Backend Swagger Docs | http://127.0.0.1:8000/docs |
+| ML Service | http://127.0.0.1:8001/ |
+| **Admin Portal** | http://127.0.0.1:5173/ |
+| **Patient Portal** | http://127.0.0.1:5174/patient |
+| Prometheus | http://127.0.0.1:9090/ |
+| Grafana | http://127.0.0.1:3000/ |
 
-- Backend: http://127.0.0.1:8000/api/health
-- Backend docs: http://127.0.0.1:8000/docs
-- ML service: http://127.0.0.1:8001/
-- Admin portal: http://127.0.0.1:5173/
-- Patient portal: http://127.0.0.1:5174/patient
-- Prometheus: http://127.0.0.1:9090/
-- Grafana: http://127.0.0.1:3000/
+### Step 4 — Common operations
 
-### 5) View logs / stop
+**View logs (follow mode):**
 
 ```bash
 docker compose -f docker-compose.dev.yml logs -f --tail=200
 ```
 
+**View logs for a specific service:**
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f frontend_admin
+```
+
+**Stop the stack (keep data):**
+
 ```bash
 docker compose -f docker-compose.dev.yml down
 ```
 
-Remove volumes too (wipes Postgres/Grafana data):
+**Stop and wipe all data (Postgres/Grafana volumes):**
 
 ```bash
 docker compose -f docker-compose.dev.yml down -v
 ```
+
+**Check container status:**
+
+```bash
+docker compose -f docker-compose.dev.yml ps
+```
+
+### Rebuild only the frontend containers
+
+If you change frontend code, you don't need to rebuild everything:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build frontend_admin frontend_patient
+```
+
+### Rebuild only the backend
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build backend
+```
+
+### Clean up Docker storage
+
+Docker images accumulate over multiple rebuilds. To free space:
+
+```bash
+# Remove unused/dangling images
+docker image prune -f
+
+# Remove ALL build cache (aggressive — forces full rebuild next time)
+docker builder prune -a -f
+
+# Nuclear option: remove everything unused (images, containers, volumes, networks)
+docker system prune -a -f
+```
+
+### Frontend Docker Architecture
+
+The frontend Dockerfile uses a **multi-stage build**:
+
+1. **Build stage** (`node:22-alpine`):
+   - Runs `npm ci` to install dependencies
+   - Runs `npm run build:admin` and `npm run build:patient` (Vite builds)
+   - Runs `node scripts/generate-index.mjs` to create `index.html` for each portal
+   - Prerendering is **disabled** because TanStack Start's SSR server cannot reach the backend API during the Docker build phase
+2. **Serve stage** (`nginx:1.27-alpine`):
+   - Copies the built static files into nginx
+   - The `BUILD_MODE` build arg (`admin` or `patient`) selects which dist to serve
+   - nginx uses `try_files $uri $uri/ /index.html` for SPA client-side routing
+
+Key files involved in the Docker build:
+
+| File | Purpose |
+|------|---------|
+| `frontend/Dockerfile` | Multi-stage build: Node build → nginx serve |
+| `frontend/nginx.conf` | SPA-friendly nginx config with gzip |
+| `frontend/scripts/generate-index.mjs` | Generates `index.html` from TanStack Start manifest (needed because prerendering is disabled) |
+| `frontend/vite.config.ts` | Prerendering disabled (`enabled: false`) to avoid SSR crashes during build |
+| `frontend/src/lib/api.ts` | Axios interceptor returns mock data during SSR to prevent build failures |
+| `frontend/.dockerignore` | Excludes `node_modules/`, `dist*/`, `.vite/` from build context |
+| `backend/.dockerignore` | Excludes local caches from backend build context |
+| `docker-compose.dev.yml` | Orchestrates all services with correct `BUILD_MODE` args |
+
+---
 
 ### Step A — Start the Backend (FastAPI + Portal WS)
 
@@ -393,3 +464,36 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8001
 npm run dev:admin -- --host 127.0.0.1 --port 5173
 npm run dev:patient -- --host 127.0.0.1 --port 5174
 ```
+
+### 5) Docker build fails with `exit code: 1` on `npm run build:admin`
+
+This was a known issue caused by TanStack Start's prerendering trying to reach the backend API during the Docker build (when no backend is available).
+
+**Fix already applied in this repo:**
+
+- `frontend/vite.config.ts` has `prerender: { enabled: false }`
+- `frontend/scripts/generate-index.mjs` generates `index.html` post-build
+- `frontend/src/lib/api.ts` returns mock data during SSR
+
+If the error reappears after modifying these files, ensure prerendering stays disabled and the generate-index script runs after each Vite build.
+
+### 6) Docker frontend shows `403 Forbidden` from nginx
+
+This means nginx can't find `index.html` in its root directory.
+
+**Fix:** The `generate-index.mjs` script must run after each build in the Dockerfile. Check that the Dockerfile has:
+
+```dockerfile
+RUN npm run build:admin  && node scripts/generate-index.mjs dist-admin
+RUN npm run build:patient && node scripts/generate-index.mjs dist-patient
+```
+
+### 7) Docker build is slow / runs out of memory
+
+- Increase Docker Desktop memory allocation to **4 GB+** (Settings → Resources)
+- Use selective rebuilds instead of full rebuilds:
+  ```bash
+  docker compose -f docker-compose.dev.yml up -d --build frontend_admin frontend_patient
+  ```
+- Clean old build cache: `docker builder prune -a -f`
+

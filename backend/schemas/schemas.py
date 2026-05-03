@@ -16,7 +16,7 @@ class Patient(BaseModel):
 
 
 class Doctor(BaseModel):
-    id: str
+    id: int
     name: str
     specialty: str
     avatarColor: str
@@ -30,7 +30,7 @@ class Appointment(BaseModel):
     id: str
     patientName: str
     patientId: str
-    doctorId: str
+    doctorId: int
     doctorName: str
     time: str
     date: str
@@ -38,25 +38,25 @@ class Appointment(BaseModel):
     predictedWaitMin: int
     reason: str
     slotId: Optional[str] = None
-    urgency: Optional[Literal["low", "medium", "high"]] = None
+    urgency: Optional[Literal["routine", "moderate", "urgent"]] = None
 
 
 class AppointmentCreate(BaseModel):
     patientName: str
     patientId: str
-    doctorId: str
+    doctorId: int
     doctorName: str
     time: str
     date: str
     reason: str
     slotId: Optional[str] = None
-    urgency: Optional[Literal["low", "medium", "high"]] = None
+    urgency: Optional[Literal["routine", "moderate", "urgent"]] = None
 
 
 class AppointmentUpdate(BaseModel):
     patientName: Optional[str] = None
     patientId: Optional[str] = None
-    doctorId: Optional[str] = None
+    doctorId: Optional[int] = None
     doctorName: Optional[str] = None
     time: Optional[str] = None
     date: Optional[str] = None
@@ -64,21 +64,21 @@ class AppointmentUpdate(BaseModel):
     predictedWaitMin: Optional[int] = None
     reason: Optional[str] = None
     slotId: Optional[str] = None
-    urgency: Optional[Literal["low", "medium", "high"]] = None
+    urgency: Optional[Literal["routine", "moderate", "urgent"]] = None
 
 
 class AlertActionOpenSlots(BaseModel):
     kind: Literal["open_slots"]
     count: int
-    doctorId: Optional[str] = None
+    doctorId: Optional[int] = None
     windowLabel: Optional[str] = None
 
 
 class AlertActionReassignPatients(BaseModel):
     kind: Literal["reassign_patients"]
     count: int
-    fromDoctorId: Optional[str] = None
-    toDoctorId: Optional[str] = None
+    fromDoctorId: Optional[int] = None
+    toDoctorId: Optional[int] = None
 
 
 class AlertActionTriggerRetraining(BaseModel):
