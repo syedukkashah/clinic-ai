@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from backend.db.models import Appointment, Doctor, Notification, OpsAlert
 from backend.services.ml_service import ml_service_client
 from backend.core.logging import get_logger
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 logger = get_logger(__name__)
 
@@ -19,7 +19,7 @@ async def run_proactive_scheduling(db: Session):
     logger.info("Starting proactive scheduling run...")
     
     # 1. Get next 4 hours of appointments
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     four_hours_later = now + timedelta(hours=4)
     
     upcoming_appointments = db.query(Appointment).filter(
@@ -44,7 +44,7 @@ async def run_proactive_scheduling(db: Session):
 
     # 2. For each doctor, check load and wait times
     for doctor_id, appointments in appointments_by_doctor.items():
-        doctor = db.query(Doctor).get(doctor_id)
+        doctor = db.get(Doctor, doctor_id)
         if not doctor:
             continue
 

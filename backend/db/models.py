@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import declarative_base, relationship
-from datetime import datetime
+from datetime import datetime, UTC
 
 Base = declarative_base()
 
@@ -41,7 +41,7 @@ class Notification(Base):
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     status = Column(String, default='pending') # e.g., pending, sent, failed
 
     patient = relationship("Patient", back_populates="notifications")
@@ -52,5 +52,5 @@ class OpsAlert(Base):
     id = Column(Integer, primary_key=True, index=True)
     message = Column(Text, nullable=False)
     severity = Column(String, default='info') # e.g., info, warning, critical
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     details = Column(JSON)

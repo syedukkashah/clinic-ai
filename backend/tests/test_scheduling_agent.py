@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock
 
 from sqlalchemy.orm import Session
@@ -42,7 +42,7 @@ async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, m
     ]
 
     # 2. Set up initial database state
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     original_start_time = now + timedelta(hours=1)
 
     doctor = Doctor(name="Dr. Test", specialty="cardiology")
@@ -76,8 +76,8 @@ async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, m
     db_session.refresh(appointment)
     assert appointment.start_time != original_start_time
     # The mock logic moves it by 2 hours
-    assert appointment.start_time == original_start_time + timedelta(hours=2)
-
+    expected_new_time = original_start_time + timedelta(hours=2)
+    assert appointment.start_time.replace(microsecond=0, tzinfo=None) == expected_new_time.replace(microsecond=0, tzinfo=None)
     # Verify notification was created
     notifications = db_session.query(Notification).all()
     assert len(notifications) == 1
