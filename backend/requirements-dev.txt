@@ -12,6 +12,7 @@
 # Testing framework
 # -----------------------------------------------------------------------------
 pytest==8.2.2
+pytest-mock==3.14.0                # mocker fixture for patching/mocking objects
 pytest-asyncio==0.23.7             # async test support (all our tests are async)
 pytest-cov==5.0.0                  # coverage reports — CI fails if coverage drops below 60%
 anyio[trio]==4.4.0                 # async test runner backend for pytest-asyncio
