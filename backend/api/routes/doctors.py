@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from services.doctor_data import DOCTORS
+from backend.services.doctor_data import DOCTORS
 
 router = APIRouter()
 
