@@ -12,7 +12,7 @@
 # -----------------------------------------------------------------------------
 # Web framework & server
 # -----------------------------------------------------------------------------
-setuptools==70.0.0                 # required for building openai-whisper on Python 3.12
+
 fastapi==0.111.1
 uvicorn[standard]==0.30.1          # [standard] includes websockets + httptools
 python-multipart==0.0.9            # required for UploadFile (voice audio endpoint)
@@ -70,7 +70,7 @@ httpx==0.27.0                      # async HTTP client: calls ml_service /predic
 # Primary: Groq Whisper API (groq SDK above, no extra package needed)
 # Fallback: local openai-whisper (lazy-loaded on first use, NOT at import time)
 # -----------------------------------------------------------------------------
-openai-whisper==20240930           # local STT fallback (installed via Dockerfile/CI with --no-build-isolation)
+# openai-whisper==20240930             # Speech-to-text for voice triage
                                    # IMPORTANT: requires torch (see torch section below)
 ffmpeg-python==0.2.0               # whisper requires ffmpeg for audio decoding
                                    # also install system ffmpeg: apt-get install -y ffmpeg

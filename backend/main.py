@@ -4,9 +4,25 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
-from api.routes import alerts, analytics, appointments, auth, chat, doctors, ops, predictions, scheduling
 
-app = FastAPI(title="MediFlow API", version="1.0.0", docs_url=None, redoc_url=None)
+from api.routes import (
+    alerts,
+    analytics,
+    appointments,
+    auth,
+    chat,
+    doctors,
+    ops,
+    predictions,
+    scheduling,
+)
+
+app = FastAPI(
+    title="MediFlow API",
+    version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,7 +75,10 @@ def docs_landing():
 
 @app.get("/swagger", include_in_schema=False)
 def swagger_ui():
-    return get_swagger_ui_html(openapi_url=app.openapi_url, title=f"{app.title} - Swagger UI")
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+    )
 
 
 @app.get("/api/health")
@@ -84,6 +103,7 @@ class PortalHub:
     async def broadcast(self, message: str, *, sender: WebSocket) -> None:
         async with self._lock:
             clients = list(self._clients.keys())
+
         for ws in clients:
             if ws is sender:
                 continue
@@ -100,6 +120,7 @@ portal_hub = PortalHub()
 async def ws_portal(websocket: WebSocket):
     portal = websocket.query_params.get("portal", "unknown")
     await portal_hub.connect(websocket, portal)
+
     try:
         while True:
             msg = await websocket.receive_text()

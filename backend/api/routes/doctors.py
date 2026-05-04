@@ -62,6 +62,18 @@ def get_doctors(db: Session = Depends(get_db)):
 
 @router.get("/{id}/availability")
 def get_doctor_availability(id: int, db: Session = Depends(get_db)):
-    base = ["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "14:00", "14:30", "15:00", "15:30", "16:00"]
+    base = [
+        "08:00",
+        "08:30",
+        "09:00",
+        "09:30",
+        "10:00",
+        "10:30",
+        "14:00",
+        "14:30",
+        "15:00",
+        "15:30",
+        "16:00",
+    ]
     slots = sorted(random.sample(base, k=min(6, len(base))))
     return {"doctorId": id, "availableSlots": slots}

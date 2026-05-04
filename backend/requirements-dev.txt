@@ -7,15 +7,11 @@
 
 -r requirements.txt                # include all production deps
 
-
-# -----------------------------------------------------------------------------
-# Testing framework
-# -----------------------------------------------------------------------------
-pytest==8.2.2
-pytest-asyncio==0.23.7             # async test support (all our tests are async)
-pytest-cov==5.0.0                  # coverage reports — CI fails if coverage drops below 60%
-anyio[trio]==4.4.0                 # async test runner backend for pytest-asyncio
-
+# Testing
+pytest
+pytest-asyncio
+pytest-mock
+httpx # For async testing of FastAPI endpoints
 
 # -----------------------------------------------------------------------------
 # HTTP test client

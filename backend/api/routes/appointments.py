@@ -63,8 +63,12 @@ def get_appointments(db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=schemas.Appointment)
-def create_appointment(appointment: schemas.AppointmentCreate, db: Session = Depends(get_db)):
+def create_appointment(
+    appointment: schemas.AppointmentCreate,
+    db: Session = Depends(get_db),
+):
     now = int(time.time() * 1000)
+
     created = schemas.Appointment(
         id=f"apt-{now}",
         patientName=appointment.patientName,
@@ -79,18 +83,32 @@ def create_appointment(appointment: schemas.AppointmentCreate, db: Session = Dep
         slotId=appointment.slotId,
         urgency=appointment.urgency,
     )
+
     MOCK_APPOINTMENTS.insert(0, created)
     return created
 
 
+@router.post("/book")
+def book_appointment():
+    raise HTTPException(
+        status_code=501,
+        detail="Booking endpoint is not implemented yet. It will be connected to the scheduling agent later.",
+    )
+
+
 @router.put("/{id}", response_model=schemas.Appointment)
-def update_appointment(id: str, appointment_update: schemas.AppointmentUpdate, db: Session = Depends(get_db)):
+def update_appointment(
+    id: str,
+    appointment_update: schemas.AppointmentUpdate,
+    db: Session = Depends(get_db),
+):
     for i, apt in enumerate(MOCK_APPOINTMENTS):
         if apt.id == id:
             patch = appointment_update.model_dump(exclude_unset=True)
             updated_apt = apt.model_copy(update=patch)
             MOCK_APPOINTMENTS[i] = updated_apt
             return updated_apt
+
     raise HTTPException(status_code=404, detail="Appointment not found")
 
 
