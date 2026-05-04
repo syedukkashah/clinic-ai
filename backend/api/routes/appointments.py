@@ -41,14 +41,14 @@ def _seed_appointments() -> List[schemas.Appointment]:
                 id=f"apt-{i + 1}",
                 patientName=_rand_name(),
                 patientId=f"pat-{1000 + i}",
-                doctorId=f"doc-{1 + (i % 6)}",
+                doctorId=1 + (i % 6),
                 doctorName=f"Dr. {_rand_name()}",
                 time=f"{hour:02d}:{minute:02d}",
                 date=_TODAY,
                 status=random.choice(_STATUSES),
                 predictedWaitMin=random.randint(0, 55),
                 reason=random.choice(_REASONS),
-                urgency=random.choice(["low", "medium", "high"]),
+                urgency=random.choice(["routine", "moderate", "urgent"]),
             )
         )
     return out

@@ -12,6 +12,9 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/AppShell";
+import { toast } from "sonner";
+import { getPortal } from "@/lib/portal";
+import { startPortalPresence, subscribePortalEvents } from "@/lib/portalBus";
 
 import appCss from "../styles.css?url";
 
@@ -38,6 +41,7 @@ export const Route = createRootRoute({
     // Basic auth check for initial load/navigation
     if (typeof window === "undefined") return;
 
+    const portal = getPortal();
     const auth = localStorage.getItem("mediflow.auth");
     let session: unknown = null;
     try {
@@ -58,7 +62,27 @@ export const Route = createRootRoute({
       "token" in session &&
       typeof (session as { token?: unknown }).token === "string";
 
-    if (isRoot) {
+    if (portal === "patient") {
+      if (isLoginPage) {
+        throw redirect({ to: "/patient", replace: true });
+      }
+      if (!isPatientSite) {
+        throw redirect({ to: "/patient", replace: true });
+      }
+      if (isRoot) {
+        throw redirect({ to: "/patient", replace: true });
+      }
+      return;
+    }
+
+    if (portal === "admin") {
+      if (isPatientSite) {
+        throw redirect({ to: isAuthed ? "/dashboard" : "/login", replace: true });
+      }
+      if (isRoot) {
+        throw redirect({ to: isAuthed ? "/dashboard" : "/login", replace: true });
+      }
+    } else if (isRoot) {
       throw redirect({ to: isAuthed ? "/dashboard" : "/patient", replace: true });
     }
 
@@ -128,9 +152,10 @@ function Gate({ children }: { children: React.ReactNode }) {
   const isLoginPage = location.pathname === "/login";
   const isPatientSite =
     location.pathname === "/patient" || location.pathname.startsWith("/patient/");
+  const portal = getPortal();
 
   // If we are logged in and on a non-login page, use AppShell
-  if (user && !isLoginPage && !isPatientSite) {
+  if (portal !== "patient" && user && !isLoginPage && !isPatientSite) {
     return <AppShell>{children}</AppShell>;
   }
 
@@ -147,6 +172,29 @@ function RootComponent() {
         },
       }),
   );
+
+  useEffect(() => {
+    const stopPresence = startPortalPresence();
+    const unsub = subscribePortalEvents((event, envelope) => {
+      if (envelope.from === getPortal()) return;
+
+      if (event.type === "appointments:changed") {
+        queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      }
+
+      if (event.type === "patient:contact") {
+        queryClient.invalidateQueries({ queryKey: ["alerts"] });
+        toast.info("New patient request", {
+          description: `${event.channel}: ${event.ticketId}`,
+        });
+      }
+    });
+
+    return () => {
+      stopPresence();
+      unsub();
+    };
+  }, [queryClient]);
 
   return (
     <ThemeProvider>

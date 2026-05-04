@@ -84,12 +84,12 @@ def test_appointments_crud_happy_path(client):
     create_payload = {
         "patientName": "Test Patient",
         "patientId": "pat-1",
-        "doctorId": "doc-1",
+        "doctorId": 1,
         "doctorName": "Dr. Test",
         "time": "09:00",
         "date": "2026-01-01",
         "reason": "Consultation",
-        "urgency": "medium",
+        "urgency": "moderate",
     }
     created = client.post("/api/appointments/", json=create_payload)
     assert created.status_code == 200

@@ -3,7 +3,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   beforeLoad: () => {
     if (typeof window === "undefined") {
-      throw redirect({ to: "/patient", replace: true });
+      return;
     }
 
     const auth = localStorage.getItem("mediflow.auth");

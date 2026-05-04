@@ -1,4 +1,93 @@
-<<<<<<< HEAD
+# =========================
+# 🐍 Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# =========================
+# 📦 Jupyter Notebooks
+# =========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# =========================
+# 🧪 MLflow (VERY IMPORTANT)
+# =========================
+mlruns/
+mlartifacts/
+mlflow.db
+*.db
+
+# =========================
+# 📊 Data (DO NOT TRACK LARGE DATASETS)
+# =========================
+data/
+*.csv
+*.parquet
+*.feather
+
+# If you WANT to keep schema files, allow JSON only:
+!data/*.json
+
+# =========================
+# 🤖 Model artifacts (optional safety)
+# =========================
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.pt
+*.onnx
+
+# Keep ONLY explicitly needed inference artifacts if required:
+# !data/wait_time_features.json
+# !data/wait_time_label_encoders.pkl
+
+# =========================
+# 🔐 Environment variables / secrets
+# =========================
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# =========================
+# 🧠 IDE / OS files
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# =========================
+# 🧪 Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# 🚀 Docker (if used)
+# =========================
+docker-compose.override.yml
+
+# =========================
+# 🧹 Misc
+# =========================
+*.tmp
+*.bak
+
+node_modules/
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -61,6 +150,8 @@ pnpm-debug.log*
 .parcel-cache/
 
 frontend/dist/
+frontend/dist-admin/
+frontend/dist-patient/
 frontend/.vite/
 frontend/.cache/
 frontend/.turbo/
@@ -69,19 +160,6 @@ frontend/.wrangler/
 
 backend/.env
 ml_service/.env
-=======
-# Python
-__pycache__/
-*.pyc
-
-# Virtual env
-venv/
-.env
-
-# OS / IDE
-.DS_Store
-.vscode/
-
-# Node
-node_modules/
->>>>>>> origin/dev
+ml_service/data/
+ml_service/mlruns/
+ml_service/conftest.py

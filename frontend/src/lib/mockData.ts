@@ -13,7 +13,7 @@ export interface User {
 }
 
 export interface Doctor {
-  id: string;
+  id: number;
   name: string;
   specialty: string;
   avatarColor: string;
@@ -29,7 +29,7 @@ export interface Appointment {
   id: string;
   patientName: string;
   patientId: string;
-  doctorId: string;
+  doctorId: number;
   doctorName: string;
   time: string; // HH:mm
   date: string; // YYYY-MM-DD
@@ -37,7 +37,7 @@ export interface Appointment {
   predictedWaitMin: number;
   reason: string;
   slotId?: string;
-  urgency?: "low" | "medium" | "high";
+  urgency?: "routine" | "moderate" | "urgent";
 }
 
 export interface Alert {
@@ -137,7 +137,7 @@ export const DOCTORS: Doctor[] = Array.from({ length: 12 }, (_, i) => {
   else if (ratio > 0.75) status = "busy";
   else if (ratio < 0.1) status = "off";
   return {
-    id: `doc-${i + 1}`,
+    id: i + 1,
     name: `Dr. ${rand(FIRST)} ${rand(LAST)}`,
     specialty: SPECIALTIES[i % SPECIALTIES.length],
     avatarColor: DOCTOR_COLORS[i % DOCTOR_COLORS.length],
@@ -184,7 +184,7 @@ export const APPOINTMENTS: Appointment[] = Array.from({ length: 220 }, (_, i) =>
     status: rand(STATUSES),
     predictedWaitMin: Math.floor(Math.random() * 55),
     reason: rand(REASONS),
-    urgency: rand(["low", "medium", "high"] as const),
+    urgency: rand(["routine", "moderate", "urgent"] as const),
   };
 });
 
@@ -309,7 +309,7 @@ export function getOverviewStats() {
 
 export interface Slot {
   id: string;
-  doctorId: string;
+  doctorId: number;
   doctorName: string;
   specialty: string;
   date: string; // YYYY-MM-DD
@@ -331,7 +331,7 @@ export interface SchedulingRun {
   startedAt: number;
   windowHoursAhead: number;
   overloadedDoctors: Array<{
-    doctorId: string;
+    doctorId: number;
     doctorName: string;
     avgPredictedWait: number;
     peakHourLabel: string;
@@ -339,8 +339,8 @@ export interface SchedulingRun {
   }>;
   reassignments: Array<{
     appointmentId: string;
-    fromDoctorId: string;
-    toDoctorId: string;
+    fromDoctorId: number;
+    toDoctorId: number;
     fromTime: string;
     toTime: string;
     gate: { oldWaitMin: number; newWaitMin: number; passed: boolean };
@@ -396,7 +396,7 @@ function minutesAgoLabel(now: number, at: number) {
   return `${hr} hr ago`;
 }
 
-function makeSlotId(doctorId: string, date: string, time: string) {
+function makeSlotId(doctorId: number, date: string, time: string) {
   return `slot:${doctorId}:${date}:${time}`;
 }
 
@@ -861,7 +861,7 @@ export function bookAppointmentFromSlot(params: {
       predictedWaitMin: slot.predictedWaitMin,
       reason: params.reason ?? rand(REASONS),
       slotId: slot.id,
-      urgency: params.urgency ?? "medium",
+      urgency: params.urgency ?? "moderate",
     };
     const slots: Slot[] = s.slots.map(
       (x): Slot => (x.id === slot.id ? { ...x, status: "booked" } : x),
@@ -998,7 +998,7 @@ export function runSchedulingAgent(params: { windowHoursAhead: number }) {
     }
 
     const candidates = appts
-      .filter((a) => a.urgency !== "high")
+      .filter((a) => a.urgency !== "urgent")
       .sort((a, b) => b.predictedWaitMin - a.predictedWaitMin)
       .slice(0, 8);
 
@@ -1012,7 +1012,7 @@ export function runSchedulingAgent(params: { windowHoursAhead: number }) {
         (sl) =>
           sl.status === "available" &&
           sl.specialty ===
-            (s.doctors.find((d) => d.id === apt.doctorId)?.specialty ?? sl.specialty) &&
+          (s.doctors.find((d) => d.id === apt.doctorId)?.specialty ?? sl.specialty) &&
           sl.predictedWaitMin < 22,
       );
       if (!targetSlot) continue;
@@ -1090,10 +1090,10 @@ export function runSchedulingAgent(params: { windowHoursAhead: number }) {
     const agents = s.agents.map((a) =>
       a.id === "scheduling"
         ? {
-            ...a,
-            lastSeenAt: now,
-            lastAction: `Optimized schedule (+${params.windowHoursAhead}h) · gates enforced`,
-          }
+          ...a,
+          lastSeenAt: now,
+          lastAction: `Optimized schedule (+${params.windowHoursAhead}h) · gates enforced`,
+        }
         : a,
     );
     const doctors = s.doctors.map((d) => ({ ...d }));
@@ -1127,7 +1127,7 @@ export function getAvailableSlots(params: {
     .slice(0, limit);
 }
 
-export function openOverflowSlots(params: { count: number; doctorId?: string; date?: string }) {
+export function openOverflowSlots(params: { count: number; doctorId?: number; date?: string }) {
   updateState((s) => {
     const now = Date.now();
     const date = params.date ?? today;
@@ -1168,10 +1168,10 @@ export function openOverflowSlots(params: { count: number; doctorId?: string; da
     const agents = s.agents.map((a) =>
       a.id === "ops_monitor"
         ? {
-            ...a,
-            lastSeenAt: now,
-            lastAction: `suggest_open_slots(count=${newSlots.length}) · completed`,
-          }
+          ...a,
+          lastSeenAt: now,
+          lastAction: `suggest_open_slots(count=${newSlots.length}) · completed`,
+        }
         : a,
     );
 
@@ -1208,10 +1208,10 @@ export function triggerRetraining(model: "wait_time_model" | "patient_load_model
     const metrics: ClinicMetrics =
       model === "wait_time_model"
         ? {
-            ...s.metrics,
-            waitModelDriftKl: clamp(s.metrics.waitModelDriftKl - 0.06, 0.01, 0.22),
-            anomalyScore: clamp(s.metrics.anomalyScore - 0.05, 0, 1),
-          }
+          ...s.metrics,
+          waitModelDriftKl: clamp(s.metrics.waitModelDriftKl - 0.06, 0.01, 0.22),
+          anomalyScore: clamp(s.metrics.anomalyScore - 0.05, 0, 1),
+        }
         : { ...s.metrics, anomalyScore: clamp(s.metrics.anomalyScore - 0.03, 0, 1) };
 
     return { ...s, activity, agents, metrics };

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+dist-admin/
+dist-patient/
+.vinxi/
+.output/
+.vite/
