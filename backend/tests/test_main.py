@@ -5,12 +5,12 @@ client = TestClient(app)
 
 
 def test_root_route():
-    response = client.get("/")
+    response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["message"] == "Clinic AI backend is running"
+    assert response.json()["status"] == "healthy"
 
 
 def test_doctors_route():
-    response = client.get("/doctors/")
+    response = client.get("/api/doctors/")
     assert response.status_code == 200
-    assert "doctors" in response.json()
+    assert isinstance(response.json(), list)
