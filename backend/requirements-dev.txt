@@ -17,6 +17,7 @@ pytest-cov==5.0.0                  # coverage reports — CI fails if coverage d
 anyio[trio]==4.4.0                 # async test runner backend for pytest-asyncio
 
 
+
 # -----------------------------------------------------------------------------
 # HTTP test client
 # -----------------------------------------------------------------------------
