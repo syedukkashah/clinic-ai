@@ -163,3 +163,17 @@ ml_service/.env
 ml_service/data/
 ml_service/mlruns/
 ml_service/conftest.py
+
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.env
+
+# Logs / builds
+*.txt
+
+# Data (if not required)
+*.csv
+*.npy
