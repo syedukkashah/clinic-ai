@@ -31,14 +31,8 @@ jobs:
           pip install --no-build-isolation openai-whisper==20240930
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run all backend tests
+      - name: Run backend tests
         env:
           PYTHONPATH: .
           ML_SERVICE_URL: http://localhost:8001
         run: python -m pytest -v
-
-      - name: Run scheduling agent tests
-        env:
-          PYTHONPATH: .
-          ML_SERVICE_URL: http://localhost:8001
-        run: python -m pytest -v tests/test_scheduling_agent.py
