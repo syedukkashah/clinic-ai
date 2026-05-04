@@ -25,6 +25,7 @@ websockets==12.0                   # WebRTC WebSocket server (/ws/voice/{id})
 pydantic==2.7.4                    # v2 required by FastAPI 0.111+
 pydantic-settings==2.3.4           # BaseSettings for config.py (reads from .env)
 python-dotenv==1.0.1               # loads .env file in dev
+email-validator==2.2.0             # EmailStr support (schemas/schemas.py)
 
 
 # -----------------------------------------------------------------------------

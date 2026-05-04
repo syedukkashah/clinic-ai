@@ -10,6 +10,10 @@ jobs:
   backend-tests:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: backend
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,9 +29,10 @@ jobs:
           pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
           pip install numpy tqdm more-itertools tiktoken numba
           pip install --no-build-isolation openai-whisper==20240930
-          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run backend tests
         env:
+          PYTHONPATH: .
           ML_SERVICE_URL: http://localhost:8001
-        run: python -m pytest -v backend/tests
+        run: python -m pytest -v tests

@@ -11,9 +11,9 @@
 # Web framework & server
 # Same FastAPI + uvicorn as backend but this is a standalone service on port 8001.
 # -----------------------------------------------------------------------------
-fastapi==0.111.0
-uvicorn==0.29.0
-pydantic==2.7.1
+fastapi==0.111.1
+uvicorn[standard]==0.30.1
+pydantic==2.7.4
 pydantic-settings==2.3.4
 python-dotenv==1.0.1
 
@@ -54,7 +54,7 @@ mlflow==2.12.1                     # experiment tracking + model registry
 # Uses SYNC SQLAlchemy for training scripts (simpler than async for batch jobs).
 # Uses ASYNC SQLAlchemy for FastAPI endpoints (prediction logging).
 # -----------------------------------------------------------------------------
-sqlalchemy==2.0.30
+sqlalchemy==2.0.31
 asyncpg==0.29.0                    # async driver for FastAPI prediction logging endpoint
 psycopg2-binary==2.9.9             # sync driver for training scripts (pandas read_sql)
 
@@ -80,7 +80,7 @@ httpx==0.27.0
 # Backend's Prometheus scrapes both backend:8000/metrics and ml_service:8001/metrics
 # -----------------------------------------------------------------------------
 prometheus-client==0.20.0
-prometheus-fastapi-instrumentator==7.0.0
+prometheus-fastapi-instrumentator==6.1.0
 
 
 # -----------------------------------------------------------------------------
