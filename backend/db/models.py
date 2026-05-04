@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -54,4 +53,4 @@ class OpsAlert(Base):
     message = Column(Text, nullable=False)
     severity = Column(String, default='info') # e.g., info, warning, critical
     created_at = Column(DateTime, default=datetime.utcnow)
-    details = Column(JSONB)
+    details = Column(JSON)
