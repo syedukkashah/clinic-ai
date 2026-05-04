@@ -21,7 +21,7 @@ import os
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))chec
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 # ── Set INTERNAL_SECRET before importing main so auth checks work in tests ────
 # Tests that expect 401 send no header or wrong header.
 # Tests that expect 200 must send exactly this value.
