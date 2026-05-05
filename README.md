@@ -675,14 +675,30 @@ Main groups:
 - `GET /api/health` — basic health check
 - `GET /api/health/db` — database connectivity check with table counts **(DB-backed)**
 - `POST /api/auth/login/access-token` — demo login (returns JWT)
-- `GET /api/doctors/` and `GET /api/doctors/{id}/availability` — doctors with computed dashboard fields **(DB-backed)**
-- `GET /api/appointments/`, `POST`, `PUT`, `DELETE /api/appointments/{id}` — full appointment CRUD **(DB-backed)**
+- `GET /api/doctors/` — all doctors with computed dashboard fields **(DB-backed)**
+- `GET /api/doctors/{id}/availability` — available time slots for a doctor **(DB-backed)**
+- `GET /api/appointments/?limit=50&offset=0` — paginated appointments with joined names **(DB-backed)**
+- `POST /api/appointments/` — create a new appointment **(DB-backed)**
+- `PUT /api/appointments/{id}` — update appointment fields **(DB-backed)**
+- `DELETE /api/appointments/{id}` — delete an appointment **(DB-backed)**
+- `POST /api/appointments/book` — booking stub (returns 501 — will connect to scheduling agent)
 - `GET /api/analytics/overview` — today's totals, queue size, avg wait, health score **(DB-backed)**
 - `GET /api/analytics/wait-series` — hourly wait time chart data **(DB-backed)**
 - `GET /api/analytics/load-forecast` — hourly actual vs predicted patient load **(DB-backed)**
-- `GET /api/ops/*` — ops suggestions, activity feed, agents, metrics (mocked)
+- `GET /api/predictions/wait-time` — ML wait time prediction (stub model)
+- `GET /api/predictions/load` — ML patient load prediction (stub model)
+- `GET /api/alerts/` — list ops alerts (mocked)
+- `POST /api/alerts/` — create a new alert (mocked, in-memory)
+- `POST /api/alerts/{id}/acknowledge` — acknowledge an alert (mocked)
+- `GET /api/ops/suggestions` — AI-generated ops suggestions (mocked)
+- `GET /api/ops/activity` — real-time activity feed (mocked)
+- `GET /api/ops/agents` — AI agent statuses (mocked)
+- `GET /api/ops/metrics` — clinic operational metrics (mocked)
+- `POST /api/schedule/optimize` — schedule optimization (stub)
+- `POST /api/schedule/reassign` — patient reassignment (stub)
 - `POST /api/chat/message` — chat agent (simple rule-based, mocked)
 - `POST /api/chat/voice/process` — voice flow (mocked)
+- `ws://127.0.0.1:8000/ws/portal?portal=admin|patient` — cross-portal WebSocket relay
 
 ---
 
