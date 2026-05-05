@@ -4,18 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
-
-from api.routes import (
-    alerts,
-    analytics,
-    appointments,
-    auth,
-    chat,
-    doctors,
-    ops,
-    predictions,
-    scheduling,
-)
+from api.routes import alerts, analytics, appointments, auth, chat, doctors, health, ops, predictions, scheduling
 
 app = FastAPI(
     title="MediFlow API",
@@ -41,6 +30,7 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Ops Monitor"])
 app.include_router(ops.router, prefix="/api/ops", tags=["Ops"])
 app.include_router(scheduling.router, prefix="/api/schedule", tags=["Scheduling"])
+app.include_router(health.router, prefix="/api/health", tags=["Health"])
 
 
 @app.get("/", include_in_schema=False)

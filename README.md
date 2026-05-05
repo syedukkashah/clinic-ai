@@ -4,7 +4,8 @@ A full-stack demo clinic operations + patient experience app.
 
 - **Backend**: FastAPI (Python) exposing a REST API under `/api/*`
 - **Frontend**: Vite + TanStack (React) dashboard and patient UI
-- **Note**: Many features are intentionally **mocked/in-memory** to make the project easy to run locally (no external services required by default).
+- **Database**: PostgreSQL 16 with ~58k appointments, 11 doctors, ~7.9k patients, and ~13.5k daily-load rows
+- **Note**: Core features (doctors, appointments, analytics) are **backed by real PostgreSQL data**. Some features (AI agents, ops monitoring, chat/voice) remain intentionally mocked.
 
 ---
 
@@ -232,6 +233,288 @@ Key files involved in the Docker build:
 
 ---
 
+## Database Setup (PostgreSQL + Alembic + Seed Data)
+
+The backend uses **PostgreSQL 16** for persistent storage, **Alembic** for schema migrations, and a Python seed script to populate initial data. This section walks through setting up the database from scratch.
+
+### Architecture overview
+
+```
+docker-compose.dev.yml
+  └─ postgres (port 5432)    ← Docker container running PostgreSQL 16
+       └─ database: mediflow
+            └─ user: mediflow / password: from POSTGRES_PASSWORD in .env
+
+backend/
+  ├─ alembic.ini             ← Alembic config (DB connection URL)
+  ├─ db/migrations/versions/ ← Migration files (schema changes)
+  ├─ scripts/seed.py         ← Populates tables with CSV data
+  └─ scripts/verify_db.py    ← Prints table counts + schema checks
+```
+
+### Step 1 — Start only Postgres
+
+You don't need to start all Docker services — just Postgres:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d postgres
+```
+
+Verify it's running:
+
+```bash
+docker compose -f docker-compose.dev.yml ps postgres
+```
+
+You should see `STATUS: Up` with port `5432->5432`.
+
+### Step 2 — Create Python virtual environment
+
+From the **repo root**:
+
+#### Windows (PowerShell)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r backend\requirements.txt
+python -m pip install psycopg2-binary python-dotenv pandas numpy
+```
+
+> If PowerShell blocks activation, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+
+#### macOS / Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r backend/requirements.txt
+pip install psycopg2-binary python-dotenv pandas numpy
+```
+
+> **Note:** The `openai-whisper` dependency in `requirements.txt` may fail to build on some machines — this is fine. It's only needed for the voice transcription feature, not for the database setup.
+
+### Step 3 — Configure the database URL
+
+The backend reads `DATABASE_URL` from `backend/.env`. Create it if it doesn't exist:
+
+```dotenv
+# backend/.env
+DATABASE_URL=postgresql+psycopg2://mediflow:mediflow123@localhost:5432/mediflow
+POSTGRES_PASSWORD=mediflow123
+JWT_SECRET=supersecretlocalkey123456789
+SECRET_KEY=supersecretlocalkey123456789
+```
+
+Alembic reads its connection URL from `backend/alembic.ini` (line 4). It should match:
+
+```ini
+sqlalchemy.url = postgresql://mediflow:mediflow123@localhost:5432/mediflow
+```
+
+> Replace `mediflow123` with whatever value you set for `POSTGRES_PASSWORD` in the root `.env`.
+
+### Step 4 — Run Alembic migrations
+
+From `backend/`:
+
+```bash
+python -m alembic upgrade head
+```
+
+This creates all tables: `doctors`, `patients`, `appointments`, `daily_load`, `ml_predictions`, `slots`, `notifications`, `ops_alerts`, `predictions`.
+
+### Step 5 — Seed the database
+
+The seed script reads CSV files from `ml_service/data/` and populates the database. It is **idempotent** — running it multiple times won't duplicate data (it skips tables that already have rows).
+
+From `backend/`:
+
+#### Windows (PowerShell)
+
+```powershell
+$env:PYTHONIOENCODING="utf-8"
+python scripts\seed.py
+```
+
+> The `PYTHONIOENCODING` setting is required on Windows because the script prints Unicode characters (⏭, ✅) that the default Windows console encoding (cp1252) cannot render.
+
+#### macOS / Linux
+
+```bash
+python scripts/seed.py
+```
+
+### Step 6 — Verify the database
+
+From `backend/`:
+
+```bash
+python scripts/verify_db.py
+```
+
+Expected output:
+
+```
+============================================================
+  DATABASE VERIFICATION
+============================================================
+
+  Tables found: 10
+    - alembic_version: 1 rows
+    - appointments: 58,864 rows
+    - daily_load: 13,500 rows
+    - doctors: 11 rows
+    - ml_predictions: 0 rows
+    - notifications: 0 rows
+    - ops_alerts: 0 rows
+    - patients: 7,939 rows
+    - predictions: 0 rows
+    - slots: 0 rows
+
+  Enum types:
+    urgencylevel:
+      - ROUTINE
+      - MODERATE
+      - URGENT
+
+  Doctor IDs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+  Doctor ID type: int
+
+============================================================
+  Verification complete ✅
+============================================================
+```
+
+### Expected data summary
+
+| Table | Rows | Source |
+|-------|------|--------|
+| doctors | 11 | Hardcoded in `seed.py` |
+| patients | ~7,939 | Derived from unique `patient_id` in `appointments.csv` |
+| appointments | ~58,864 | From `ml_service/data/appointments.csv` |
+| daily_load | ~13,500 | From `ml_service/data/daily_load.csv` |
+| ml_predictions | 0 | Populated by ML service at runtime |
+
+### Schema rules
+
+- **Urgency enum** (`urgencylevel`): `ROUTINE`, `MODERATE`, `URGENT`
+- **Booking channel enum** (`bookingchannel`): `CHAT`, `VOICE_NOTE`, `WEBRTC_CALL`, `TWILIO_CALL`
+- **Appointment status enum** (`appointmentstatus`): `PENDING`, `CONFIRMED`, `WAITING`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`
+- **Doctor IDs**: Integers 1–11 (not strings)
+- **Patient IDs / Appointment IDs**: UUID strings
+
+### Reset the database (start fresh)
+
+If you need to wipe everything and start over:
+
+```bash
+# Stop Postgres and delete its volume
+docker compose -f docker-compose.dev.yml down -v
+
+# Start Postgres fresh
+docker compose -f docker-compose.dev.yml up -d postgres
+
+# Wait ~5 seconds for Postgres to initialize, then re-run migrations + seed
+cd backend
+python -m alembic upgrade head
+python scripts/seed.py
+```
+
+---
+
+## Database Integration Architecture
+
+The backend uses a clean **async CRUD layer** (`db/crud.py`) that sits between API routes and the database. All routes call CRUD functions instead of writing inline queries.
+
+### Connection Layer
+
+| File | Purpose |
+|------|---------|
+| `backend/core/config.py` | Pydantic Settings — single source of truth for `DATABASE_URL` |
+| `backend/db/session.py` | Async engine (asyncpg) + sync engine (psycopg2) + session factories |
+| `backend/db/models.py` | 10 SQLAlchemy ORM models with enums and relationships |
+| `backend/db/crud.py` | Async data-access layer — all DB queries live here |
+
+### Connection Pool Settings
+
+The async engine is configured with production-grade pool settings:
+
+```python
+async_engine = create_async_engine(
+    ASYNC_URL,
+    pool_size=10,       # 10 persistent connections
+    max_overflow=20,    # up to 20 additional on burst
+    pool_pre_ping=True, # detect stale connections before use
+)
+```
+
+### DB-Backed Endpoints
+
+These endpoints query PostgreSQL via the CRUD layer:
+
+| Endpoint | CRUD Function | Description |
+|----------|--------------|-------------|
+| `GET /api/health/db` | `crud.check_db()` | DB connectivity probe + table row counts |
+| `GET /api/doctors/` | `crud.get_doctors()` | All doctors with computed dashboard fields |
+| `GET /api/doctors/{id}/availability` | `crud.get_doctor_availability()` | Available slots for a doctor |
+| `GET /api/appointments/` | `crud.get_appointments()` | Paginated appointments with joined names |
+| `POST /api/appointments/` | `crud.create_appointment()` | Insert new appointment |
+| `PUT /api/appointments/{id}` | `crud.update_appointment()` | Update appointment fields |
+| `DELETE /api/appointments/{id}` | `crud.delete_appointment()` | Delete appointment |
+| `GET /api/analytics/overview` | `crud.get_overview_stats()` | Today's totals, queue, avg wait, health |
+| `GET /api/analytics/wait-series` | `crud.get_wait_series()` | Hourly average wait times |
+| `GET /api/analytics/load-forecast` | `crud.get_load_forecast()` | Hourly actual vs predicted patient load |
+
+### Computed Fields (Option A — Dynamic)
+
+The frontend schemas expect fields like `avatarColor`, `appointmentsToday`, `capacity`, and `status` that don't exist as database columns. These are **computed dynamically** at query time:
+
+- **`avatarColor`** — Assigned from a rotating gradient palette based on doctor ID
+- **`appointmentsToday`** — COUNT of today's appointments per doctor
+- **`capacity`** — Fixed at 22 (configurable constant)
+- **`status`** — Derived: `off` (unavailable), `overloaded` (≥ capacity), `busy` (≥ 60% capacity), `available`
+
+This approach keeps the existing frontend contract intact without requiring schema migrations.
+
+### Verifying DB Connectivity
+
+After starting the backend, hit the health endpoint:
+
+```bash
+curl http://127.0.0.1:8000/api/health/db
+```
+
+Expected response:
+
+```json
+{
+  "status": "connected",
+  "tables": {
+    "doctors": 11,
+    "patients": 7939,
+    "appointments": 58864,
+    "daily_load": 13500,
+    "ml_predictions": 0
+  }
+}
+```
+
+### Still-Mocked Routes
+
+These routes intentionally remain mocked (no corresponding DB tables with real data):
+
+| Route File | Endpoints | Reason |
+|-----------|-----------|--------|
+| `ops.py` | `/api/ops/*` (suggestions, activity, agents, metrics) | AI agent features — no real data |
+| `alerts.py` | `/api/alerts/*` | Ops monitoring — no real data |
+| `chat.py` | `/api/chat/*` | Chat agent — rule-based stub |
+| `scheduling.py` | `/api/schedule/*` | Optimization — stub |
+
+---
+
 ### Step A — Start the Backend (FastAPI + Portal WS)
 
 ```bash
@@ -389,13 +672,16 @@ You can explore the full list in Swagger:
 
 Main groups:
 
-- `GET /api/health` — health check
+- `GET /api/health` — basic health check
+- `GET /api/health/db` — database connectivity check with table counts **(DB-backed)**
 - `POST /api/auth/login/access-token` — demo login (returns JWT)
-- `GET /api/doctors/` and `GET /api/doctors/{id}/availability` — doctors data (mocked)
-- `GET /api/appointments/`, `POST /api/appointments/`, `PUT /api/appointments/{id}`, `DELETE /api/appointments/{id}` — appointment CRUD (in-memory)
-- `GET /api/analytics/*` — overview and charts (mocked)
+- `GET /api/doctors/` and `GET /api/doctors/{id}/availability` — doctors with computed dashboard fields **(DB-backed)**
+- `GET /api/appointments/`, `POST`, `PUT`, `DELETE /api/appointments/{id}` — full appointment CRUD **(DB-backed)**
+- `GET /api/analytics/overview` — today's totals, queue size, avg wait, health score **(DB-backed)**
+- `GET /api/analytics/wait-series` — hourly wait time chart data **(DB-backed)**
+- `GET /api/analytics/load-forecast` — hourly actual vs predicted patient load **(DB-backed)**
 - `GET /api/ops/*` — ops suggestions, activity feed, agents, metrics (mocked)
-- `POST /api/chat/message` — chat agent (simple rule-based)
+- `POST /api/chat/message` — chat agent (simple rule-based, mocked)
 - `POST /api/chat/voice/process` — voice flow (mocked)
 
 ---
