@@ -1,7 +1,7 @@
 import httpx
 import os
 from typing import Dict, Any
-from backend.core.logging import get_logger
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 

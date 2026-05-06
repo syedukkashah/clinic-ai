@@ -1,8 +1,8 @@
 import asyncio
-from backend.tasks.celery_app import celery_app
-from backend.db.session import SessionLocal
-from backend.services.scheduling_agent import run_proactive_scheduling
-from backend.core.logging import get_logger
+from tasks.celery_app import celery_app
+from db.session import SessionLocal
+from services.scheduling_agent import run_proactive_scheduling
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 

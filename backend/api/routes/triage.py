@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from backend.schemas.patient import PatientIntakeRequest, PatientIntakeResponse
-from backend.services.triage_agent import analyze_symptoms
+from schemas.patient import PatientIntakeRequest, PatientIntakeResponse
+from services.triage_agent import analyze_symptoms
 
 router = APIRouter()
 
