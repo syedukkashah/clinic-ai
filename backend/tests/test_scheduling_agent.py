@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 from sqlalchemy.orm import Session
 from backend.services.scheduling_agent import run_proactive_scheduling
-from backend.db.models import Doctor, Patient, Appointment, Notification, OpsAlert
+from backend.db.models import Doctor, Patient, Appointment, Notification, OpsAlert, AppointmentStatus
 
 @pytest.mark.asyncio
 async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, mocker):
@@ -57,9 +57,8 @@ async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, m
     appointment = Appointment(
         patient_id=patient.id,
         doctor_id=doctor.id,
-        start_time=original_start_time,
-        end_time=original_start_time + timedelta(minutes=30),
-        status='confirmed'
+        scheduled_at=original_start_time,
+        status=AppointmentStatus.CONFIRMED
     )
     db_session.add(appointment)
     db_session.commit()
@@ -74,10 +73,10 @@ async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, m
 
     # Verify the appointment was moved
     db_session.refresh(appointment)
-    assert appointment.start_time != original_start_time
+    assert appointment.scheduled_at != original_start_time
     # The mock logic moves it by 2 hours
     expected_new_time = original_start_time + timedelta(hours=2)
-    assert appointment.start_time.replace(microsecond=0, tzinfo=None) == expected_new_time.replace(microsecond=0, tzinfo=None)
+    assert appointment.scheduled_at.replace(microsecond=0, tzinfo=None) == expected_new_time.replace(microsecond=0, tzinfo=None)
     # Verify notification was created
     notifications = db_session.query(Notification).all()
     assert len(notifications) == 1

@@ -23,9 +23,9 @@ async def run_proactive_scheduling(db: Session):
     four_hours_later = now + timedelta(hours=4)
     
     upcoming_appointments = db.query(Appointment).filter(
-        Appointment.start_time >= now,
-        Appointment.start_time <= four_hours_later,
-        Appointment.status == 'confirmed'
+        Appointment.scheduled_at >= now,
+        Appointment.scheduled_at <= four_hours_later,
+        Appointment.status == 'Confirmed'
     ).all()
 
     if not upcoming_appointments:
@@ -69,8 +69,8 @@ async def run_proactive_scheduling(db: Session):
                 wait_time_payload = {
                     "slot_id": appt.id,
                     "doctor_id": doctor.id,
-                    "hour_of_day": appt.start_time.hour,
-                    "day_of_week": appt.start_time.weekday(),
+                    "hour_of_day": appt.scheduled_at.hour,
+                    "day_of_week": appt.scheduled_at.weekday(),
                     "queue_depth": len(appointments), # Simplified queue depth
                     "specialty": doctor.specialty
                 }
@@ -90,9 +90,8 @@ async def run_proactive_scheduling(db: Session):
                     
                     if new_slot:
                         # 4. Reassign appointment and notify
-                        original_start_time = appt.start_time
-                        appt.start_time = new_slot.start_time
-                        appt.end_time = new_slot.end_time
+                        original_start_time = appt.scheduled_at
+                        appt.scheduled_at = new_slot.start_time
                         appt.doctor_id = new_slot.doctor_id # In case we switch doctors
                         db.commit()
                         reassignments += 1
@@ -114,14 +113,14 @@ async def find_and_evaluate_alternative(db: Session, current_appt: Appointment, 
     Finds a better slot for an appointment.
     """
     # Simplified logic: Look for an open slot in the next 8 hours
-    search_start = current_appt.start_time + timedelta(minutes=30)
+    search_start = current_appt.scheduled_at + timedelta(minutes=30)
     search_end = search_start + timedelta(hours=8)
 
     # This is a placeholder for a more complex slot-finding logic.
     # In a real system, you'd query for available `Slot` records.
     # For now, we'll simulate finding a slot 2 hours later.
     
-    potential_new_start = current_appt.start_time + timedelta(hours=2)
+    potential_new_start = current_appt.scheduled_at + timedelta(hours=2)
     
     # Mock a "found" slot for demonstration
     class MockSlot:
@@ -162,12 +161,11 @@ def create_patient_notification(db: Session, appointment: Appointment, original_
         f"Your appointment with Dr. {appointment.doctor.name} on "
         f"{original_start_time.strftime('%B %d')} has been moved from "
         f"{original_start_time.strftime('%I:%M %p')} to "
-        f"{appointment.start_time.strftime('%I:%M %p')} to ensure a shorter wait time."
+        f"{appointment.scheduled_at.strftime('%I:%M %p')} to ensure a shorter wait time."
     )
     notification = Notification(
         patient_id=appointment.patient_id,
         message=message,
-        status='pending'
     )
     db.add(notification)
     db.commit()
@@ -178,14 +176,14 @@ def create_ops_alert(db: Session, appointment: Appointment, original_doctor: Doc
     message = (
         f"Auto-reschedule due to overload for Dr. {original_doctor.name}. "
         f"Appt #{appointment.id} moved from {original_start_time.strftime('%I:%M %p')} "
-        f"to {appointment.start_time.strftime('%I:%M %p')} with Dr. {appointment.doctor.name}."
+        f"to {appointment.scheduled_at.strftime('%I:%M %p')} with Dr. {appointment.doctor.name}."
     )
     details = {
         "original_doctor_id": original_doctor.id,
         "new_doctor_id": appointment.doctor_id,
         "appointment_id": appointment.id,
         "original_start_time": original_start_time.isoformat(),
-        "new_start_time": appointment.start_time.isoformat(),
+        "new_start_time": appointment.scheduled_at.isoformat(),
         "original_predicted_wait": original_wait,
         "trigger": "proactive_scheduling_agent"
     }

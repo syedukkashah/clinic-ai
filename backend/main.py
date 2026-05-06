@@ -1,16 +1,26 @@
 import asyncio
+from contextlib import asynccontextmanager
+from redis import asyncio as aioredis
 
+from core.config import settings
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 from api.routes import alerts, analytics, appointments, auth, chat, doctors, health, ops, predictions, scheduling
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.redis = await aioredis.from_url(settings.REDIS_URL, decode_responses=False)
+    yield
+    await app.state.redis.close()
+
 app = FastAPI(
     title="MediFlow API",
     version="1.0.0",
     docs_url=None,
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
