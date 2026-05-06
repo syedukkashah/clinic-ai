@@ -107,3 +107,5 @@ orjson==3.10.5
 # black==24.4.2
 # (keep a requirements-dev.txt in ml_service/ mirroring backend/requirements-dev.txt
 #  minus the agent-specific type stubs)
+
+setuptools>=69.0.0
