@@ -96,7 +96,7 @@ jobs:
           pip install numpy tqdm more-itertools tiktoken numba
           pip install --no-build-isolation openai-whisper==20240930
           pip install -r requirements.txt -r requirements-dev.txt
-      
+
       - name: Run scheduling agent tests
         env:
           PYTHONPATH: .
