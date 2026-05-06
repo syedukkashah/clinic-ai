@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock
 
 from sqlalchemy.orm import Session
-from backend.services.scheduling_agent import run_proactive_scheduling
-from backend.db.models import Doctor, Patient, Appointment, Notification, OpsAlert, AppointmentStatus
+from services.scheduling_agent import run_proactive_scheduling
+from db.models import Doctor, Patient, Appointment, Notification, OpsAlert, AppointmentStatus
 
 @pytest.mark.asyncio
 async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, mocker):
@@ -17,7 +17,7 @@ async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, m
     """
     # 1. Mock the ML Service Client
     mock_ml_client = mocker.patch(
-        'backend.services.scheduling_agent.ml_service_client',
+        'services.scheduling_agent.ml_service_client',
         new_callable=AsyncMock
     )
 

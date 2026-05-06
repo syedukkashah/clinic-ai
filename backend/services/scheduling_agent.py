@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
-from backend.db.models import Appointment, Doctor, Notification, OpsAlert
-from backend.services.ml_service import ml_service_client
-from backend.core.logging import get_logger
+from db.models import Appointment, Doctor, Notification, OpsAlert
+from services.ml_service import ml_service_client
+from core.logging import get_logger
 from datetime import datetime, timedelta, UTC
 
 logger = get_logger(__name__)

@@ -80,7 +80,7 @@ def test_voice_process_endpoint(client):
     assert "responseText" in body
 
 
-from backend.db.models import Patient, Doctor
+from db.models import Patient, Doctor
 
 def test_appointments_crud_happy_path(client, db_session):
     patient = Patient(id="pat-1", name="Test Patient")
