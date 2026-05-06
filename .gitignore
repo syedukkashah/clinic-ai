@@ -163,6 +163,9 @@ ml_service/.env
 ml_service/data/
 ml_service/mlruns/
 ml_service/conftest.py
+ml_service/data/*.csv
+ml_service/data/*.json
+ml_service/data/*.npy
 
 # =========================
 # 🗑️ Debug / build artifacts (should never be committed)
