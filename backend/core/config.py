@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
 
     DATABASE_URL: str = "postgresql+psycopg2://mediflow:mediflow123@localhost:5432/mediflow"
+    TEST_DATABASE_URL: str = "sqlite:///./test.db"
+    ASYNC_TEST_DATABASE_URL: str = "sqlite+aiosqlite:///./test.db"
     POSTGRES_PASSWORD: str = "mediflow123"
     REDIS_URL: str = "redis://localhost:6379"
 

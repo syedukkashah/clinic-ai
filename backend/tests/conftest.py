@@ -1,10 +1,9 @@
 import sys
 from pathlib import Path
 
-# Add the project root to the Python path
-# This allows tests to import modules from the 'backend' package
-project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(project_root))
+# Add the backend directory to the Python path
+backend_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(backend_root))
 
 import pytest
 import asyncio
@@ -16,9 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from main import app
 from db.models import Base
 from db.session import get_db
+from core.config import settings
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = settings.TEST_DATABASE_URL
+ASYNC_SQLALCHEMY_DATABASE_URL = settings.ASYNC_TEST_DATABASE_URL
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
@@ -38,10 +38,15 @@ AsyncTestingSessionLocal = sessionmaker(
     autocommit=False, autoflush=False, bind=async_engine, class_=AsyncSession
 )
 
-@pytest.fixture(scope="function")
-def db_session():
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+
+@pytest.fixture(scope="function")
+def db_session():
     db = TestingSessionLocal()
     try:
         yield db
