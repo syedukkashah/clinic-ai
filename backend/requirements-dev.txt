@@ -11,6 +11,7 @@
 pytest
 pytest-asyncio
 pytest-mock
+aiosqlite # For async sqlite database testing
 httpx # For async testing of FastAPI endpoints
 
 # -----------------------------------------------------------------------------

@@ -23,6 +23,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379
       - SECRET_KEY=${JWT_SECRET}
       - GEMINI_API_KEY=${GEMINI_API_KEYS}
       - GROQ_API_KEY=${GROQ_API_KEYS}

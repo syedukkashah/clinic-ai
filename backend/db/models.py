@@ -1,4 +1,5 @@
 import enum
+import uuid
 
 from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
@@ -32,7 +33,7 @@ class BookingChannel(str, enum.Enum):
 class Patient(Base):
     __tablename__ = "patients"
 
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, index=True, nullable=False)
     email = Column(String, unique=True, index=True)
     phone = Column(String)
@@ -61,7 +62,7 @@ class Doctor(Base):
 class Appointment(Base):
     __tablename__ = "appointments"
 
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     patient_id = Column(String, ForeignKey("patients.id"), nullable=False, index=True)
     doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=False, index=True)
     slot_id = Column(Integer, ForeignKey("slots.id"), nullable=True, index=True)
@@ -96,8 +97,8 @@ class Appointment(Base):
     ml_predictions = relationship("MLPrediction", back_populates="appointment")
     notifications = relationship("Notification", back_populates="appointment")
 
-class Prediction(Base):
-    __tablename__ = "predictions"
+class AnomalyPrediction(Base):
+    __tablename__ = "anomaly_predictions"
 
     id = Column(Integer, primary_key=True, index=True)
     type = Column(String)
@@ -148,6 +149,7 @@ class OpsAlert(Base):
     id = Column(Integer, primary_key=True, index=True)
     message = Column(String, nullable=False)
     severity = Column(String(20), default="warning")
+    details = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
