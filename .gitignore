@@ -179,3 +179,11 @@ __pycache__/
 # Data (if not required)
 *.csv
 *.npy
+
+# =========================
+# 🗑️ Debug / build artifacts (should never be committed)
+# =========================
+allfiles.txt
+build_output*.txt
+error.md
+*.pdf

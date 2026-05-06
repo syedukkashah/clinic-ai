@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, staging, agents]
   pull_request:
-    branches: [main]
+    branches: [main, develop, staging]
 
 jobs:
   backend-tests:
@@ -31,7 +31,8 @@ jobs:
           pip install --no-build-isolation openai-whisper==20240930
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run backend tests
         env:
           PYTHONPATH: .
-        run: python -m pytest
+          ML_SERVICE_URL: http://localhost:8001
+        run: python -m pytest -v tests
