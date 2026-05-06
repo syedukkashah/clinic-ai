@@ -166,6 +166,19 @@ ml_service/conftest.py
 ml_service/data/*.csv
 ml_service/data/*.json
 ml_service/data/*.npy
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.env
+
+# Logs / builds
+*.txt
+
+# Data (if not required)
+*.csv
+*.npy
 
 # =========================
 # 🗑️ Debug / build artifacts (should never be committed)
