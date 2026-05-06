@@ -40,7 +40,7 @@ services:
       context: ./ml_service
       dockerfile: Dockerfile
     environment:
-      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - DATABASE_URL=postgresql+asyncpg://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
     ports:
       - "8001:8001"
     depends_on:
