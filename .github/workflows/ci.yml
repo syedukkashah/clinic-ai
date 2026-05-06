@@ -42,7 +42,7 @@ jobs:
         env:
           PYTHONPATH: .
           ML_SERVICE_URL: http://localhost:8001
-        run: python -m pytest -v tests
+        run: python -m pytest -v tests --ignore=tests/test_redis_memory.py
 
   frontend-tests:
     name: Frontend Build & Tests
@@ -104,46 +104,54 @@ jobs:
         run: python -m pytest -v tests/test_scheduling_agent.py
 
   redis-memory-tests:
-      name: Redis Memory Tests (Real Redis)
-      runs-on: ubuntu-latest
-      defaults:
-        run:
-          working-directory: backend
+    name: Redis Memory Tests (Real Redis)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
 
-      services:
-        redis:
-          image: redis:7-alpine
-          ports:
-            - 6379:6379
-          options: >-
-            --health-cmd "redis-cli ping"
-            --health-interval 5s
-            --health-timeout 3s
-            --health-retries 5
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
 
-      steps:
-        - name: Checkout code
-          uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        - name: Set up Python
-          uses: actions/setup-python@v5
-          with:
-            python-version: "3.12"
-            cache: "pip"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-        - name: Install dependencies
-          run: |
-            python -m pip install --upgrade pip setuptools wheel
-            pip install -r requirements.txt -r requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt -r requirements-dev.txt
 
-        - name: Wait for Redis
-          run: |
-            until redis-cli -h localhost -p 6379 ping; do
-              echo "Waiting for Redis..."
-              sleep 1
-            done
+      - name: Wait for Redis
+        run: |
+          python -c "
+          import socket, time
+          for i in range(30):
+              try:
+                  s = socket.create_connection(('localhost', 6379), timeout=1)
+                  s.close()
+                  print('Redis is up!')
+                  break
+              except OSError:
+                  print(f'Waiting for Redis... ({i+1}/30)')
+                  time.sleep(1)
+          "
 
-        - name: Run Redis memory tests
-          env:
-            PYTHONPATH: .
-          run: pytest -v tests/test_redis_memory.py
+      - name: Run Redis memory tests
+        env:
+          PYTHONPATH: .
+        run: pytest -v tests/test_redis_memory.py
