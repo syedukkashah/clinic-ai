@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from db.models import (
-    Base, Patient, Doctor, Slot, Appointment, Prediction,
+    Base, Patient, Doctor, Slot, Appointment, AnomalyPrediction,
     MLPrediction, OpsAlert, Notification, DailyLoad,
     AppointmentStatus, UrgencyLevel, BookingChannel
 )
@@ -60,7 +60,7 @@ def test_all_tables_exist():
     assert "doctors" in table_names
     assert "slots" in table_names
     assert "appointments" in table_names
-    assert "predictions" in table_names
+    assert "anomaly_predictions" in table_names
     assert "ml_predictions" in table_names
     assert "ops_alerts" in table_names
     assert "notifications" in table_names

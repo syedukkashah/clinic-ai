@@ -97,8 +97,8 @@ class Appointment(Base):
     ml_predictions = relationship("MLPrediction", back_populates="appointment")
     notifications = relationship("Notification", back_populates="appointment")
 
-class Prediction(Base):
-    __tablename__ = "predictions"
+class AnomalyPrediction(Base):
+    __tablename__ = "anomaly_predictions"
 
     id = Column(Integer, primary_key=True, index=True)
     type = Column(String)
