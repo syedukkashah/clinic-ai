@@ -5,7 +5,8 @@ A full-stack demo clinic operations + patient experience app.
 - **Backend**: FastAPI (Python) exposing a REST API under `/api/*`
 - **Frontend**: Vite + TanStack (React) dashboard and patient UI
 - **Database**: PostgreSQL 16 with ~58k appointments, 11 doctors, ~7.9k patients, and ~13.5k daily-load rows
-- **Note**: Core features (doctors, appointments, analytics) are **backed by real PostgreSQL data**. Some features (AI agents, ops monitoring, chat/voice) remain intentionally mocked.
+- **Cache/Session Memory**: Redis 7 for handling chat sessions and scheduling agent memory
+- **Note**: Core features (doctors, appointments, analytics) are **backed by real PostgreSQL data**. Some features (AI agents, ops monitoring, chat/voice) remain intentionally mocked but utilize Redis for session states.
 
 ---
 
@@ -241,9 +242,10 @@ The backend uses **PostgreSQL 16** for persistent storage, **Alembic** for schem
 
 ```
 docker-compose.dev.yml
-  └─ postgres (port 5432)    ← Docker container running PostgreSQL 16
-       └─ database: mediflow
-            └─ user: mediflow / password: from POSTGRES_PASSWORD in .env
+  ├─ postgres (port 5432)    ← Docker container running PostgreSQL 16
+  │    └─ database: mediflow
+  │         └─ user: mediflow / password: from POSTGRES_PASSWORD in .env
+  └─ redis (port 6379)       ← Docker container running Redis 7 for session memory
 
 backend/
   ├─ alembic.ini             ← Alembic config (DB connection URL)
@@ -303,6 +305,7 @@ The backend reads `DATABASE_URL` from `backend/.env`. Create it if it doesn't ex
 ```dotenv
 # backend/.env
 DATABASE_URL=postgresql+psycopg2://mediflow:mediflow123@localhost:5432/mediflow
+REDIS_URL=redis://localhost:6379
 POSTGRES_PASSWORD=mediflow123
 JWT_SECRET=supersecretlocalkey123456789
 SECRET_KEY=supersecretlocalkey123456789
@@ -707,14 +710,16 @@ Main groups:
 From the `backend/` folder:
 
 ```bash
-python -m pytest -q
+python -m pytest backend/tests -v
 ```
 
-This project includes a test that:
+This project includes tests that:
 
-- Loads `/openapi.json`
-- Calls every documented endpoint with a minimal request
-- Fails if any endpoint returns a 5xx error
+- Load `/openapi.json`
+- Call every documented endpoint with a minimal request
+- Fail if any endpoint returns a 5xx error
+- **Database Isolation**: The test suite uses an in-memory async SQLite database (`aiosqlite`) to completely isolate tests from the live PostgreSQL database.
+- **Redis Mocking**: It uses a custom MockRedis client so tests run instantly without needing a live Redis server.
 
 ---
 
