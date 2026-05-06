@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+# This allows tests to import modules from the 'backend' package
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
