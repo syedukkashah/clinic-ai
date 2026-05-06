@@ -2,18 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, staging, agents]
+    branches:
+      - dev
   pull_request:
-    branches: [main, develop, staging]
+    branches:
+      - dev
 
 jobs:
   backend-tests:
+    name: Backend Tests (FastAPI)
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: backend
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,6 +23,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -31,8 +33,42 @@ jobs:
           pip install --no-build-isolation openai-whisper==20240930
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Basic FastAPI import check
+        env:
+          PYTHONPATH: .
+        run: python -c "from main import app; print('FastAPI app loaded successfully!')"
+
       - name: Run backend tests
         env:
           PYTHONPATH: .
           ML_SERVICE_URL: http://localhost:8001
         run: python -m pytest -v tests
+
+  frontend-tests:
+    name: Frontend Build & Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test --if-present
+
+      - name: Build frontend (Admin)
+        run: npm run build:admin
+
+      - name: Build frontend (Patient)
+        run: npm run build:patient
