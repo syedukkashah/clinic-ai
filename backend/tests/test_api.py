@@ -1,4 +1,5 @@
 import re
+from unittest.mock import patch, AsyncMock
 
 
 def _materialize_path(path_template: str) -> str:
@@ -38,10 +39,16 @@ def test_all_openapi_endpoints_do_not_500_on_minimal_requests(client):
 
             request_fn = getattr(client, method_lc)
             try:
-                if method_lc in {"post", "put", "patch"}:
-                    resp = request_fn(materialized, json={})
-                else:
-                    resp = request_fn(materialized)
+                with patch("services.tts_service.synthesize", AsyncMock(return_value="/tmp/test.mp3")):
+                    with patch("services.stt_service.transcribe_file", AsyncMock(return_value={"transcript": "test", "lang": "en"})):
+                        with patch("agents.booking_agent.llm_router.call", AsyncMock()) as mock_llm:
+                            mock_resp = type('MockResponse', (), {})()
+                            mock_resp.text = "Test response"
+                            mock_llm.return_value = mock_resp
+                            if method_lc in {"post", "put", "patch"}:
+                                resp = request_fn(materialized, json={})
+                            else:
+                                resp = request_fn(materialized)
             except Exception as e:
                 failures.append(f"{method_lc.upper()} {materialized} raised {type(e).__name__}: {e}")
                 continue
@@ -65,22 +72,37 @@ def test_auth_login_demo_accounts(client):
 
 
 def test_chat_message_endpoint(client):
-    res = client.post("/api/chat/message", json={"userId": "u1", "message": "hello"})
+    with patch("agents.booking_agent.llm_router.call", AsyncMock()) as mock_llm:
+        mock_resp = type('MockResponse', (), {})()
+        mock_resp.text = "Hello! How can I help you today?"
+        mock_llm.return_value = mock_resp
+        res = client.post("/api/chat/message", json={"userId": "u1", "message": "hello"})
     assert res.status_code == 200
     body = res.json()
     assert "response" in body
     assert body.get("agentId") == "booking_agent"
 
 
-def test_voice_process_endpoint(client):
-    res = client.post("/api/chat/voice/process", json={"userId": "u1", "audioDataBase64": "ZHVtbXk="})
+from db.models import Patient, Doctor
+from io import BytesIO
+
+
+def test_voice_chat_endpoint(client):
+    with patch("services.tts_service.synthesize", AsyncMock(return_value="/tmp/test.mp3")):
+        with patch("services.stt_service.transcribe_file", AsyncMock(return_value={"transcript": "Hello, I need a doctor", "lang": "en"})):
+            with patch("agents.booking_agent.llm_router.call", AsyncMock()) as mock_llm:
+                mock_resp = type('MockResponse', (), {})()
+                mock_resp.text = "I can help you book an appointment!"
+                mock_llm.return_value = mock_resp
+                audio_file = BytesIO(b"fake_audio_data")
+                res = client.post("/api/voice/chat", files={"audio": ("test.mp3", audio_file, "audio/mpeg")}, data={"session_id": "test-session-123"})
     assert res.status_code == 200
     body = res.json()
     assert "transcript" in body
-    assert "responseText" in body
-
-
-from db.models import Patient, Doctor
+    assert "text_response" in body
+    assert "audio_url" in body
+    assert body["transcript"] == "Hello, I need a doctor"
+    assert body["text_response"] == "I can help you book an appointment!"
 
 def test_appointments_crud_happy_path(client, db_session):
     patient = Patient(id="pat-1", name="Test Patient")
