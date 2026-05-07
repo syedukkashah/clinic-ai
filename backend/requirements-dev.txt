@@ -9,7 +9,7 @@
 
 # Testing
 pytest
-pytest-asyncio
+pytest-asyncio==0.23.6
 pytest-mock
 aiosqlite # For async sqlite database testing
 httpx # For async testing of FastAPI endpoints

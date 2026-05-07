@@ -61,8 +61,7 @@ from typing import Any, Dict, List, Literal, Optional
 import google.generativeai as genai
 import httpx
 from groq import AsyncGroq, Groq
-from mistralai.async_client import MistralAsyncClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 
 from core.config import settings
 from schemas.llm import LLMResponse
@@ -74,7 +73,12 @@ TASK_PROVIDER_PREFERENCE = {
     "urdu": ["gemini", "mistral", "groq"],
     "rag": ["gemini", "mistral", "groq"],
     "voice": ["groq", "gemini", "mistral"],
+    "voice_reasoning": ["gemini", "mistral", "groq"],  # v5.0: fastest Gemini for voice loop
 }
+
+# v5.0: Force the fastest Gemini model for voice_reasoning tasks.
+# This overrides the default model in _call_gemini when the task is voice_reasoning.
+VOICE_MODEL_OVERRIDE = "gemini-2.5-flash"
 
 # --- Custom Exception ---
 class AllProvidersExhausted(Exception):
@@ -130,7 +134,7 @@ class LLM_Router:
     async def call(
         self,
         messages: List[Dict[str, str]],
-        task_type: Literal["reasoning", "extraction", "urdu", "rag", "voice"],
+        task_type: Literal["reasoning", "extraction", "urdu", "rag", "voice", "voice_reasoning"],
         system: Optional[str] = None,
         temperature: float = 0.2,
         max_tokens: int = 1024,
@@ -149,12 +153,13 @@ class LLM_Router:
                 if not key:
                     # No more available (unblocked) keys for this provider
                     break
-    
+
                 try:
                     if provider == "groq":
                         response = await self._call_groq(key, messages, system, temperature, max_tokens)
                     elif provider == "gemini":
-                        response = await self._call_gemini(key, messages, system, temperature, max_tokens)
+                        model_override = VOICE_MODEL_OVERRIDE if task_type == "voice_reasoning" else None
+                        response = await self._call_gemini(key, messages, system, temperature, max_tokens, model_override=model_override)
                     elif provider == "mistral":
                         response = await self._call_mistral(key, messages, system, temperature, max_tokens)
                     else:
@@ -163,7 +168,7 @@ class LLM_Router:
                     
                     # If the call was successful, return the response immediately
                     return response
-    
+
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 429:
                         print(f"Rate limit hit for {provider} with key ...{key[-4:]}. Blocking key and retrying with next key.")
@@ -181,8 +186,11 @@ class LLM_Router:
                     last_error = e
                     # Break from the key loop to try the next provider
                     break
-    
+
         raise AllProvidersExhausted(f"All LLM providers and their keys failed. Last error: {last_error}")
+
+    async def _call_groq(self, api_key: str, messages: List[Dict[str, str]], system: Optional[str], temperature: float, max_tokens: int) -> LLMResponse:
+        client = AsyncGroq(api_key=api_key)
         if system:
             messages = [{"role": "system", "content": system}] + messages
         
@@ -200,10 +208,11 @@ class LLM_Router:
             raw=chat_completion.to_dict()
         )
 
-    async def _call_gemini(self, api_key: str, messages: List[Dict[str, str]], system: Optional[str], temperature: float, max_tokens: int) -> LLMResponse:
+    async def _call_gemini(self, api_key: str, messages: List[Dict[str, str]], system: Optional[str], temperature: float, max_tokens: int, model_override: Optional[str] = None) -> LLMResponse:
         genai.configure(api_key=api_key)
+        model_name = model_override or 'gemini-2.5-flash'
         model = genai.GenerativeModel(
-            'gemini-1.5-flash',
+            model_name,
             system_instruction=system
         )
         
@@ -221,20 +230,18 @@ class LLM_Router:
         return LLMResponse(
             text=response.text,
             provider="gemini",
-            model="gemini-1.5-flash",
+            model=model_name,
             raw=response.to_dict()
         )
 
     async def _call_mistral(self, api_key: str, messages: List[Dict[str, str]], system: Optional[str], temperature: float, max_tokens: int) -> LLMResponse:
-        client = MistralAsyncClient(api_key=api_key)
+        client = Mistral(api_key=api_key)
         if system:
             messages = [{"role": "system", "content": system}] + messages
 
-        mistral_messages = [ChatMessage(**msg) for msg in messages]
-
-        chat_response = await client.chat(
+        chat_response = await client.chat.complete_async(
             model="mistral-small-latest",
-            messages=mistral_messages,
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )
