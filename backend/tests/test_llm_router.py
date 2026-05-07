@@ -71,7 +71,6 @@ async def test_successful_call(mock_call_gemini, llm_router):
     assert response.provider == "gemini"
     mock_call_gemini.assert_called_once()
 
-
 @pytest.mark.asyncio
 @patch('services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
 @patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
@@ -91,7 +90,6 @@ async def test_fallback_provider_is_used(mock_gemini, mock_mistral, llm_router):
     assert response.provider == "mistral"
     mock_gemini.assert_called()
     mock_mistral.assert_called_once()
-
 
 @pytest.mark.asyncio
 @patch('services.llm_router.LLM_Router._call_groq', new_callable=AsyncMock)
