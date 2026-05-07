@@ -3,10 +3,12 @@ name: CI
 on:
   push:
     branches:
-      - dev
+      - "**"
   pull_request:
     branches:
       - dev
+      - staging
+      - main
 
 jobs:
   backend-tests:
@@ -185,3 +187,139 @@ jobs:
           GEMINI_API_KEYS: test-gemini-key-1,test-gemini-key-2
           MISTRAL_API_KEYS: test-mistral-key-1,test-mistral-key-2
         run: python -m pytest -v tests/test_llm_router.py
+  
+  db-checks:
+    name: DB Schema & Migration Checks
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mediflow
+          POSTGRES_PASSWORD: mediflow123
+          POSTGRES_DB: mediflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install DB dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install sqlalchemy alembic asyncpg psycopg2-binary python-dotenv
+          pip install pytest pytest-asyncio
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run Alembic migrations
+        env:
+          DATABASE_URL: postgresql://mediflow:mediflow123@localhost:5432/mediflow
+          POSTGRES_PASSWORD: mediflow123
+        run: python -m alembic upgrade head
+
+      - name: Verify all tables exist
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'EOF'
+          import sqlalchemy as sa
+          engine = sa.create_engine("postgresql://mediflow:mediflow123@localhost:5432/mediflow")
+          with engine.connect() as conn:
+              result = conn.execute(sa.text(
+                  "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+              ))
+              tables = [row[0] for row in result]
+              print("Tables found:", tables)
+              required = [
+                  "appointments", "daily_load", "doctors", "ml_predictions",
+                  "notifications", "ops_alerts", "patients", "predictions", "slots"
+              ]
+              missing = [t for t in required if t not in tables]
+              if missing:
+                  print("MISSING TABLES:", missing)
+                  exit(1)
+              print("All required tables present.")
+          EOF
+
+      - name: Verify schema constraints
+        run: |
+          python - <<'EOF'
+          import sqlalchemy as sa
+          engine = sa.create_engine("postgresql://mediflow:mediflow123@localhost:5432/mediflow")
+          with engine.connect() as conn:
+              result = conn.execute(sa.text("""
+                  SELECT conname FROM pg_constraint
+                  WHERE contype = 'u'
+                  AND conname IN ('uq_slot_doctor_time', 'uq_daily_load_doctor_date_hour')
+              """))
+              constraints = [row[0] for row in result]
+              print("Unique constraints found:", constraints)
+              missing = [c for c in ['uq_slot_doctor_time', 'uq_daily_load_doctor_date_hour']
+                         if c not in constraints]
+              if missing:
+                  print("MISSING CONSTRAINTS:", missing)
+                  exit(1)
+              result = conn.execute(sa.text("""
+                  SELECT data_type FROM information_schema.columns
+                  WHERE table_name='doctors' AND column_name='id'
+              """))
+              dtype = result.scalar()
+              print("Doctor ID type:", dtype)
+              if dtype != 'integer':
+                  print("ERROR: Doctor ID should be integer, got:", dtype)
+                  exit(1)
+              print("All schema constraints verified.")
+          EOF
+
+      - name: Run DB model tests
+        env:
+          DATABASE_URL: postgresql://mediflow:mediflow123@localhost:5432/mediflow
+          POSTGRES_PASSWORD: mediflow123
+          PYTHONPATH: .
+        run: python -m pytest -v tests/test_models.py
+  booking-agent-tests:
+    name: Booking Agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run booking agent tests
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: http://localhost:8001
+          GROQ_API_KEYS: test-groq-key-1
+          GEMINI_API_KEYS: test-gemini-key-1
+          MISTRAL_API_KEYS: test-mistral-key-1
+        run: python -m pytest -v tests/test_booking_agent.py
