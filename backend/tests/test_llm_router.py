@@ -13,7 +13,7 @@ from schemas.llm import LLMResponse
 @pytest.fixture
 def mock_settings():
     """Fixture to mock the settings object with test API keys."""
-    with patch('backend.services.llm_router.settings') as mock:
+    with patch('services.llm_router.settings') as mock:
         mock.GROQ_API_KEYS = "gsk_key1,gsk_key2"
         mock.GEMINI_API_KEYS = "gem_key1,gem_key2"
         mock.MISTRAL_API_KEYS = "mis_key1,mis_key2"
@@ -57,7 +57,7 @@ def test_blocked_key_expires(llm_router):
 
 
 @pytest.mark.asyncio
-@patch('backend.services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
+@patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
 async def test_successful_call(mock_call_gemini, llm_router):
     """Tests a successful call using the preferred provider."""
     mock_call_gemini.return_value = LLMResponse(text="Success", provider="gemini", model="gemini-1.5-flash")
@@ -73,8 +73,8 @@ async def test_successful_call(mock_call_gemini, llm_router):
 
 
 @pytest.mark.asyncio
-@patch('backend.services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
-@patch('backend.services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
+@patch('services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
+@patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
 async def test_fallback_provider_is_used(mock_call_gemini, mock_call_mistral, llm_router):
     """Tests that the router falls back to the next provider if the first one fails."""
     # Gemini (first choice for reasoning) will fail
@@ -94,7 +94,7 @@ async def test_fallback_provider_is_used(mock_call_gemini, mock_call_mistral, ll
 
 
 @pytest.mark.asyncio
-@patch('backend.services.llm_router.LLM_Router._call_groq', new_callable=AsyncMock)
+@patch('services.llm_router.LLM_Router._call_groq', new_callable=AsyncMock)
 async def test_rate_limit_blocks_key_and_retries(mock_call_groq, llm_router):
     """
     Tests that a 429 error blocks the key and the router retries with the next key
@@ -119,9 +119,9 @@ async def test_rate_limit_blocks_key_and_retries(mock_call_groq, llm_router):
 
 
 @pytest.mark.asyncio
-@patch('backend.services.llm_router.LLM_Router._call_groq', new_callable=AsyncMock)
-@patch('backend.services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
-@patch('backend.services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
+@patch('services.llm_router.LLM_Router._call_groq', new_callable=AsyncMock)
+@patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
+@patch('services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
 async def test_all_providers_exhausted_error(mock_mistral, mock_gemini, mock_groq, llm_router):
     """
     Tests that AllProvidersExhausted is raised when all providers and keys fail.
