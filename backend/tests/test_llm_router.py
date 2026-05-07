@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import httpx
 
-from backend.services.llm_router import AllProvidersExhausted, LLM_Router
-from backend.schemas.llm import LLMResponse
+from services.llm_router import AllProvidersExhausted, LLM_Router
+from schemas.llm import LLMResponse
 
 # --- Test Fixtures ---
 
