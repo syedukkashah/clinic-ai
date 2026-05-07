@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "mediflow123"
     REDIS_URL: str = "redis://localhost:6379"
 
-    GEMINI_API_KEY: Optional[str] = None
-    GROQ_API_KEY: Optional[str] = None
-    TOGETHER_API_KEY: Optional[str] = None
+    GEMINI_API_KEYS: str = ""
+    GROQ_API_KEYS: str = ""
+    MISTRAL_API_KEYS: str = ""
 
     class Config:
         env_file = ".env"
