@@ -135,6 +135,13 @@ joblib==1.4.2                      # load/save anomaly detector model (.pkl file
 
 
 # -----------------------------------------------------------------------------
+# RAG — vector database for informational clinic knowledge
+# -----------------------------------------------------------------------------
+chromadb==0.5.23                   # ChromaDB persistent vector store for RAG pipeline
+                                   # NOTE: do NOT use 0.5.3 (embedding function bug)
+
+
+# -----------------------------------------------------------------------------
 # Async utilities
 # -----------------------------------------------------------------------------
 aiofiles==23.2.1                   # async file read/write for voice temp files

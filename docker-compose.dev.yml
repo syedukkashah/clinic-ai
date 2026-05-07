@@ -33,6 +33,8 @@ services:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
     ports:
       - "8000:8000"
+    volumes:
+      - chroma_data:/app/data/chroma_db
     depends_on:
       - postgres
       - redis
@@ -98,3 +100,4 @@ services:
 volumes:
   postgres_data:
   grafana_data:
+  chroma_data:
