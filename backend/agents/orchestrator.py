@@ -54,7 +54,7 @@ class AgentOrchestrator:
         )
 
         if intent == "INFORMATIONAL":
-            response_text = await rag_service.query(transcript, language=lang)
+            response_text = await rag_service.query(transcript, language=lang, mode=mode)
             return AgentResponse(
                 message=response_text,
                 appointment_data=None,

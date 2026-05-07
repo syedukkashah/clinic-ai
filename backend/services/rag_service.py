@@ -165,7 +165,7 @@ class RAGService:
         logger.info(f"RAG: ingested {len(all_ids)} chunks from {len(doc_files)} files")
         return len(all_ids)
 
-    async def query(self, user_question: str, language: str = "en") -> str:
+    async def query(self, user_question: str, language: str = "en", mode: str = "text") -> str:
         """
         Retrieve top-K relevant chunks and generate a grounded LLM answer.
         Returns the response string. Never raises — always returns something.
@@ -211,9 +211,13 @@ class RAGService:
             else "Respond in English."
         )
 
+        # Voice responses must be short (max 2 sentences) for TTS latency budgets.
+        # Text responses can be slightly longer (2-4 sentences).
+        sentence_constraint = "Respond in maximum 2 sentences." if mode == "voice" else "Keep your response to 2 to 4 sentences."
+
         prompt = f"""You are MediFlow clinic assistant.
 Answer ONLY using the context below. If the context does not contain the answer, say so and suggest calling 0800-MEDIFLOW.
-Keep your response to 2 to 4 sentences. Be friendly and clear.
+{sentence_constraint} Be friendly and clear.
 {lang_instruction}
 
 CONTEXT:

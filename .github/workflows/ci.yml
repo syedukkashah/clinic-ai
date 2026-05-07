@@ -389,4 +389,6 @@ jobs:
           MISTRAL_API_KEYS: test-mistral-key-1
         run: |
           python -m pytest -v tests/test_rag.py
+          python -m pytest -v tests/unit/test_intent_router.py
           python -m pytest -v tests/integration/test_rag_flow.py
+          python -m pytest -v tests/integration/test_voice_rag_flow.py
