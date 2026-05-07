@@ -75,7 +75,7 @@ async def test_successful_call(mock_call_gemini, llm_router):
 @pytest.mark.asyncio
 @patch('services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
 @patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
-async def test_fallback_provider_is_used(mock_call_gemini, mock_call_mistral, llm_router):
+async def test_fallback_provider_is_used(mock_gemini, mock_mistral, llm_router):
     """Tests that the router falls back to the next provider if the first one fails."""
     # Gemini (first choice for reasoning) will fail
     mock_gemini.side_effect = Exception("Gemini is down")
@@ -122,7 +122,7 @@ async def test_rate_limit_blocks_key_and_retries(mock_call_groq, llm_router):
 @patch('services.llm_router.LLM_Router._call_groq', new_callable=AsyncMock)
 @patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
 @patch('services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
-async def test_all_providers_exhausted_error(mock_groq, mock_gemini, mock_mistral, llm_router):
+async def test_all_providers_exhausted_error(mock_mistral, mock_gemini, mock_groq, llm_router):
     """
     Tests that AllProvidersExhausted is raised when all providers and keys fail.
     """
