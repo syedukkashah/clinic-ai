@@ -17,6 +17,9 @@ from api.routes import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis = await aioredis.from_url(settings.REDIS_URL, decode_responses=False)
+    # RAG: auto-ingest clinic documents if ChromaDB collection is empty
+    from services.rag_service import rag_service
+    await asyncio.to_thread(rag_service.ensure_collection_populated)
     yield
     await app.state.redis.close()
 

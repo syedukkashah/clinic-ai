@@ -187,3 +187,13 @@ allfiles.txt
 build_output*.txt
 error.md
 *.pdf
+
+# =========================
+# 📚 RAG knowledge base — track clinic docs despite data/ and *.txt ignores
+# =========================
+!backend/data/
+!backend/data/clinic_docs/
+!backend/data/clinic_docs/*.txt
+
+# ChromaDB vector store — binary artifact, never commit
+backend/data/chroma_db/

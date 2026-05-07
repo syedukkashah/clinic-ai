@@ -1,0 +1,4 @@
+# Production volume persistence for ChromaDB RAG index
+# Ensures the vector store survives container rebuilds without manual re-ingestion.
+volumes:
+  chroma_data:

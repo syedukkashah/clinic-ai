@@ -1,0 +1,28 @@
+MediFlow Clinic — General Information
+ 
+Name: MediFlow Medical Clinic
+Type: Outpatient multi-specialty clinic
+Opening hours: Monday to Saturday 9am to 8pm
+Sunday: 9am to 2pm (emergency and general cases only)
+Emergency line: Available 24/7 at 0800-MEDIFLOW
+ 
+Departments and Specialties:
+- General Medicine: Dr. Ahmed Raza, Dr. Sara Malik, Dr. Kamran Iqbal
+- Cardiology: Dr. Nadia Hussain, Dr. Tariq Butt
+- Pediatrics: Dr. Ayesha Khan, Dr. Bilal Chaudhry
+- Dermatology: Dr. Zara Siddiqui, Dr. Usman Qureshi
+- Orthopedics: Dr. Hina Javed, Dr. Faisal Sheikh
+ 
+Facilities:
+- In-house pharmacy on ground floor (open during clinic hours)
+- Diagnostic lab for blood tests, urine, and basic imaging
+- Wheelchair ramp at main entrance
+- Elevator access to all floors
+- Accessible washrooms on each floor
+- Waiting area with seating for 60 patients
+- Priority seating for elderly and pregnant patients
+- Cafeteria on ground floor
+- Free parking in basement for first 2 hours
+ 
+Languages supported: Urdu and English
+Appointment channels: Text chat, voice note, phone call, WebRTC call
