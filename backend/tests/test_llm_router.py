@@ -75,12 +75,12 @@ async def test_successful_call(mock_call_gemini, llm_router):
 @pytest.mark.asyncio
 @patch('services.llm_router.LLM_Router._call_mistral', new_callable=AsyncMock)
 @patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
-async def test_fallback_provider_is_used(mock_call_mistral, mock_call_gemini, llm_router):
+async def test_fallback_provider_is_used(mock_call_gemini, mock_call_mistral, llm_router):
     """Tests that the router falls back to the next provider if the first one fails."""
     # Gemini (first choice for reasoning) will fail
-    mock_call_gemini.side_effect = Exception("Gemini is down")
+    mock_gemini.side_effect = Exception("Gemini is down")
     # Mistral (second choice) will succeed
-    mock_call_mistral.return_value = LLMResponse(text="Fallback success", provider="mistral", model="mistral-small")
+    mock_mistral.return_value = LLMResponse(text="Fallback success", provider="mistral", model="mistral-small")
 
     response = await llm_router.call(
         messages=[{"role": "user", "content": "Hello"}],
@@ -89,8 +89,8 @@ async def test_fallback_provider_is_used(mock_call_mistral, mock_call_gemini, ll
 
     assert response.text == "Fallback success"
     assert response.provider == "mistral"
-    mock_call_gemini.assert_called()
-    mock_call_mistral.assert_called_once()
+    mock_gemini.assert_called()
+    mock_mistral.assert_called_once()
 
 
 @pytest.mark.asyncio
