@@ -182,3 +182,97 @@ def test_ensure_collection_populated_skips_if_not_empty():
     with patch.object(svc, "ingest_documents") as mock_ingest:
         svc.ensure_collection_populated()
         mock_ingest.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 9. test_orchestrator_routes_informational_to_rag
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_orchestrator_routes_informational_to_rag():
+    """Orchestrator should route INFORMATIONAL queries to RAG service."""
+    from agents.orchestrator import orchestrator
+    from services.rag_service import rag_service
+
+    test_answer = "Clinic is open from 9 AM to 5 PM."
+    with patch("agents.orchestrator.route_intent", AsyncMock(return_value="INFORMATIONAL")):
+        with patch.object(rag_service, "query", AsyncMock(return_value=test_answer)):
+            with patch("agents.booking_agent.llm_router.call", AsyncMock()):
+                result = await orchestrator.handle_booking(
+                    "What are your opening hours?", 
+                    "test_session_rag", 
+                    "en", 
+                    "text"
+                )
+    
+    assert result.message == test_answer
+    assert result.appointment_data is None
+
+
+# ---------------------------------------------------------------------------
+# 10. test_rag_query_chroma_failure_returns_fallback
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_rag_query_chroma_failure_returns_fallback():
+    """RAG query with ChromaDB failure returns fallback message."""
+    from services.rag_service import RAGService
+
+    svc = RAGService.__new__(RAGService)
+    svc._client = MagicMock()
+    svc._embed_fn = MagicMock()
+
+    mock_collection = MagicMock()
+    mock_collection.query.side_effect = Exception("ChromaDB is down")
+    svc._collection = mock_collection
+
+    result = await svc.query("What should I do before appointment?")
+    assert "0800-MEDIFLOW" in result
+
+
+# ---------------------------------------------------------------------------
+# 11. test_rag_query_llm_failure_returns_fallback
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_rag_query_llm_failure_returns_fallback():
+    """RAG query with LLM failure returns fallback message."""
+    from services.rag_service import RAGService
+
+    svc = RAGService.__new__(RAGService)
+    svc._client = MagicMock()
+    svc._embed_fn = MagicMock()
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["Fasting is required."]],
+        "metadatas": [[{"source": "prep"}]],
+    }
+    svc._collection = mock_collection
+
+    mock_router = MagicMock()
+    mock_router.call = AsyncMock(side_effect=Exception("LLM down"))
+    with patch("services.llm_router.llm_router", mock_router):
+        result = await svc.query("What should I do?")
+
+    assert "0800-MEDIFLOW" in result
+
+
+# ---------------------------------------------------------------------------
+# 12. test_intent_router_case_insensitive
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_intent_router_case_insensitive():
+    """Intent router should work with lowercase/uppercase responses."""
+    from services.intent_router import route_intent
+
+    mock_resp = MagicMock()
+    mock_resp.text = "informational"
+    with patch("services.intent_router.llm_router") as mock_router:
+        mock_router.call = AsyncMock(return_value=mock_resp)
+        result = await route_intent("Clinic hours?")
+        assert result == "INFORMATIONAL"
+
+    mock_resp = MagicMock()
+    mock_resp.text = "Operational"
+    with patch("services.intent_router.llm_router") as mock_router:
+        mock_router.call = AsyncMock(return_value=mock_resp)
+        result = await route_intent("Book appointment")
+        assert result == "OPERATIONAL"
