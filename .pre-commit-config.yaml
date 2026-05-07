@@ -1,0 +1,106 @@
+# .pre-commit-config.yaml
+#
+# Purpose:
+# These checks run locally before a developer is allowed to commit.
+# They catch formatting issues, broken config files, merge conflicts,
+# large accidental files, and basic Python problems before code reaches GitHub.
+
+repos:
+  # General safety and cleanup hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Removes extra spaces at the end of lines
+      - id: trailing-whitespace
+
+      # Ensures every file ends with one clean newline
+      - id: end-of-file-fixer
+
+      # Checks YAML files like ci.yml and docker-compose.yml
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+
+      # Checks JSON files
+      - id: check-json
+
+      # Checks TOML files like pyproject.toml
+      - id: check-toml
+
+      # Prevents files with unresolved Git merge conflicts
+      - id: check-merge-conflict
+
+      # Prevents accidentally committing very large files
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+
+      # Helps prevent private keys from being committed
+      - id: detect-private-key
+
+      # Checks for broken symbolic links
+      - id: check-symlinks
+
+      # Checks for files that would conflict on case-insensitive systems like Windows
+      - id: check-case-conflict
+
+  # Python linting and auto-fixing
+  # Applies to backend, ml-service, and agents only
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.2
+    hooks:
+      # Finds Python issues and fixes simple ones automatically
+      - id: ruff
+        args: ["--fix"]
+        files: ^(backend|ml-service|agents)/.*\.py$
+
+      # Formats Python files
+      - id: ruff-format
+        files: ^(backend|ml-service|agents)/.*\.py$
+
+  # Frontend formatting
+  # This assumes frontend uses npm and package.json
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^frontend/.*\.(js|jsx|ts|tsx|json|css|scss|md|html|yaml|yml)$
+
+  # Local project-specific checks
+  - repo: local
+    hooks:
+      # Blocks accidental .env commits
+      - id: prevent-env-files
+        name: Prevent committing real env files
+        entry: bash -c 'for file in "$@"; do if [[ "$file" =~ (^|/)\.env$|(^|/)\.env\..* ]]; then echo "Do not commit real env files: $file"; exit 1; fi; done'
+        language: system
+        files: (^|/)\.env(\..*)?$
+
+      # Allows .env.example but blocks real API key-looking values
+      - id: prevent-hardcoded-api-keys
+        name: Prevent hardcoded API keys
+        entry: bash -c 'if grep -RInE "(GEMINI_API_KEY|GROQ_API_KEY|MISTRAL_API_KEY|OPENAI_API_KEY|SECRET_KEY|DATABASE_URL)=.+[A-Za-z0-9_-]{15,}" -- backend ml-service agents . 2>/dev/null | grep -v ".env.example"; then echo "Possible hardcoded secret found. Use .env locally and GitHub Secrets in CI."; exit 1; fi'
+        language: system
+        pass_filenames: false
+
+      # Optional: run quick backend import check only if backend exists
+      - id: backend-import-check
+        name: Backend import check
+        entry: bash -c 'if [ -d backend ]; then cd backend && python -m compileall app tests; fi'
+        language: system
+        pass_filenames: false
+        files: ^backend/.*\.py$
+
+      # Optional: run quick ML service import check only if ml-service exists
+      - id: ml-service-import-check
+        name: ML service import check
+        entry: bash -c 'if [ -d ml-service ]; then cd ml-service && python -m compileall .; fi'
+        language: system
+        pass_filenames: false
+        files: ^ml-service/.*\.py$
+
+      # Optional: run quick agents import check only if agents exists
+      - id: agents-import-check
+        name: Agents import check
+        entry: bash -c 'if [ -d agents ]; then cd agents && python -m compileall .; fi'
+        language: system
+        pass_filenames: false
+        files: ^agents/.*\.py$
