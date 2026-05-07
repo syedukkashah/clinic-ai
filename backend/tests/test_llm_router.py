@@ -60,7 +60,7 @@ def test_blocked_key_expires(llm_router):
 @patch('services.llm_router.LLM_Router._call_gemini', new_callable=AsyncMock)
 async def test_successful_call(mock_call_gemini, llm_router):
     """Tests a successful call using the preferred provider."""
-    mock_call_gemini.return_value = LLMResponse(text="Success", provider="gemini", model="gemini-2.5-flash")
+    mock_call_gemini.return_value = LLMResponse(text="Success", provider="gemini", model="gemini-1.5-flash")
     
     response = await llm_router.call(
         messages=[{"role": "user", "content": "Hello"}],

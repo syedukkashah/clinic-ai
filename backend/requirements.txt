@@ -69,7 +69,7 @@ deepgram-sdk==3.7.7                # Deepgram Nova-3 STT + Aura-2 TTS (v5.0 voic
 
 
 # -----------------------------------------------------------------------------
-# Voice — STT (Speech-to-Text)
+# Voice — STT (Speech-to-Tedeepgram-sdk==3.7.7   xt)
 # Primary: Groq Whisper API (groq SDK above, no extra package needed)
 # Fallback: local openai-whisper (lazy-loaded on first use, NOT at import time)
 # -----------------------------------------------------------------------------
@@ -98,7 +98,6 @@ ffmpeg-python==0.2.0               # whisper requires ffmpeg for audio decoding
 # Voices used: ur-PK-UzmaNeural (Urdu), en-US-JennyNeural (English)
 # -----------------------------------------------------------------------------
 edge-tts==6.1.12
-
 
 # -----------------------------------------------------------------------------
 # Voice — language detection
