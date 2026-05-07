@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEYS: str = ""
     GROQ_API_KEYS: str = ""
     MISTRAL_API_KEYS: str = ""
+    DEEPGRAM_API_KEY: str = ""
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
 
     class Config:
         env_file = ".env"

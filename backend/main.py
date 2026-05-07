@@ -7,7 +7,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
-from api.routes import alerts, analytics, appointments, auth, chat, doctors, health, ops, predictions, scheduling
+from fastapi.staticfiles import StaticFiles
+from api.routes import (
+    alerts, analytics, appointments, auth, chat, doctors, health,
+    ops, predictions, scheduling,
+    voice, webrtc, twilio_voice,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,6 +46,14 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["Ops Monitor"])
 app.include_router(ops.router, prefix="/api/ops", tags=["Ops"])
 app.include_router(scheduling.router, prefix="/api/schedule", tags=["Scheduling"])
 app.include_router(health.router, prefix="/api/health", tags=["Health"])
+app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
+app.include_router(webrtc.router, prefix="/ws", tags=["WebRTC"])
+app.include_router(twilio_voice.router, prefix="/api/twilio", tags=["Twilio Voice"])
+
+# Static file serving for synthesized audio
+import os
+os.makedirs("static/audio", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/", include_in_schema=False)

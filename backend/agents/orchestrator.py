@@ -1,35 +1,65 @@
 """
-AgentOrchestrator — thin routing class.
-Lives inside the FastAPI process, NOT a separate service.
-All routes call this, never agents directly.
+Agent Orchestrator
+==================
+
+Single entry point for both chat and voice requests.
+For now, everything routes to BookingAgent.
+RAG/intent routing can be added later without changing callers.
 """
 
+from __future__ import annotations
+
 import logging
-from services.llm_router import llm_router
-from db.session import AsyncSessionLocal
+
+from agents.booking_agent import AgentResponse, booking_agent
 
 logger = logging.getLogger(__name__)
 
 
 class AgentOrchestrator:
-    def __init__(self, redis=None):
-        self.redis = redis
+    """Routes incoming requests to the booking agent for now."""
 
     async def handle_booking(
         self,
-        message: str,
+        transcript: str,
         session_id: str,
-        language: str = "en",
+        lang: str = "en",
         mode: str = "text",
-    ):
-        from agents.booking_agent import process_chat_message
-        return await process_chat_message(
-            user_id=session_id,
-            message=message,
-            redis_client=self.redis,
-            language=language,
-            mode=mode,
+    ) -> AgentResponse:
+        """
+        Process a text or voice request.
+
+        Args:
+            transcript: The patient's text message or transcribed speech.
+            session_id: Unique session identifier.
+            lang: Detected language code ("en" or "ur").
+            mode: "text" for chat, "voice" for voice pipeline.
+
+        Returns:
+            AgentResponse from BookingAgent.
+        """
+        logger.info(
+            "Orchestrator routing to BookingAgent — session=%s lang=%s mode=%s",
+            session_id,
+            lang,
+            mode,
         )
+
+        try:
+            return await booking_agent.run(
+                message=transcript,
+                session_id=session_id,
+                lang=lang,
+                mode=mode,
+            )
+        except TypeError:
+            # Fallback if teammate's BookingAgent uses a slightly different signature
+            return await booking_agent.run(
+                transcript,
+                session_id,
+                lang,
+                mode,
+            )
 
 
 orchestrator = AgentOrchestrator()

@@ -20,6 +20,10 @@ Tools available:
   - create_appointment
   - cancel_appointment
   - reschedule_appointment
+
+Entry points:
+  - process_chat_message()  →  called by api/routes/chat.py (text chat)
+  - BookingAgent.run()      →  called by AgentOrchestrator (voice pipeline + RAG path)
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -40,6 +45,33 @@ logger = logging.getLogger(__name__)
 
 MAX_STEPS_TEXT = 5
 MAX_STEPS_VOICE = 3
+
+
+# ── AgentResponse ─────────────────────────────────────────────────────────────
+
+@dataclass
+class AgentResponse:
+    """
+    Structured response returned by BookingAgent.run() and the RAG path.
+
+    Used by:
+      - AgentOrchestrator.handle_booking()   (returns this to the voice pipeline)
+      - voice_service.handle_voice_request() (reads .message for TTS)
+      - rag_service.query() result wrapper   (appointment_data=None for RAG)
+    """
+
+    message: str
+    """The agent's text response to the patient."""
+
+    appointment_data: Optional[Dict[str, Any]] = None
+    """Extracted appointment details, if any. None for informational RAG responses."""
+
+    intent: str = "general_query"
+    """Detected intent: booking_intent | cancel_intent | reschedule_intent | general_query."""
+
+    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    """Tool calls made during this turn (used by debug sidebar display)."""
+
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
@@ -66,17 +98,33 @@ Rules:
 - Be concise and friendly.
 """
 
-SYSTEM_VOICE = """You are MediFlow, a bilingual clinic assistant on a voice call.
-Keep all responses to 1-2 short sentences maximum.
-Use tools by responding with JSON: {"tool": "<name>", "args": {}}
-When done, respond with plain text only. If patient speaks Urdu, reply in Urdu.
+# Voice prompt: same tool list as SYSTEM_TEXT but with the 2-sentence constraint
+# enforced to keep TTS synthesis under 1.2s (part of the 4-8s voice latency budget).
+PROMPT_VOICE = """You are MediFlow, a bilingual clinic assistant on a voice call.
+Respond in 2 sentences maximum. Be concise and clear.
+If the patient speaks Urdu, reply fully in Urdu.
 
-Tools: get_available_slots, get_doctor_profile, predict_wait_time,
-       create_appointment, cancel_appointment, reschedule_appointment
+To use a tool, respond with ONLY a JSON object:
+{"tool": "<tool_name>", "args": {<arguments>}}
+
+Available tools:
+- get_available_slots: {"specialty": str, "date": "YYYY-MM-DD" (optional)}
+- get_doctor_profile: {"doctor_id": int}
+- predict_wait_time: {"slot_id": int, "doctor_id": int, "hour_of_day": int}
+- create_appointment: {"patient_id": str, "slot_id": int, "doctor_id": int, "complaint": str, "urgency": "ROUTINE"|"MODERATE"|"URGENT"}
+- cancel_appointment: {"appointment_id": str}
+- reschedule_appointment: {"appointment_id": str, "new_slot_id": int}
+
+When done, respond with plain text only. No JSON in your final response.
 """
 
+# Alias kept for any code that still imports SYSTEM_VOICE by name.
+SYSTEM_VOICE = PROMPT_VOICE
 
-# ── Tool implementations ──────────────────────────────────────────────────────
+PROMPT_TEXT = SYSTEM_TEXT
+
+
+# ── Tool implementations (Ibrahim — do not modify) ────────────────────────────
 
 async def _get_available_slots(args: Dict) -> str:
     specialty = args.get("specialty", "general")
@@ -91,8 +139,10 @@ async def _get_available_slots(args: Dict) -> str:
             avail = await crud.get_doctor_availability(db, doc["id"])
         slots = avail.get("slots", [])[:3]
         if slots:
-            result.append(f"Dr. {doc['name']} (ID:{doc['id']}) — slots: " +
-                         ", ".join(str(s.get("start_time", "")) for s in slots))
+            result.append(
+                f"Dr. {doc['name']} (ID:{doc['id']}) — slots: "
+                + ", ".join(str(s.get("start_time", "")) for s in slots)
+            )
     return "\n".join(result) if result else f"No available slots for {specialty} right now."
 
 
@@ -102,9 +152,11 @@ async def _get_doctor_profile(args: Dict) -> str:
         doc = await crud.get_doctor(db, doctor_id)
     if not doc:
         return f"Doctor with ID {doctor_id} not found."
-    return (f"Dr. {doc['name']} | Specialty: {doc['specialty']} | "
-            f"Avg consult: {doc.get('avgConsultMin', 'N/A')} min | "
-            f"Status: {doc.get('status', 'unknown')}")
+    return (
+        f"Dr. {doc['name']} | Specialty: {doc['specialty']} | "
+        f"Avg consult: {doc.get('avgConsultMin', 'N/A')} min | "
+        f"Status: {doc.get('status', 'unknown')}"
+    )
 
 
 async def _check_patient_history(args: Dict) -> str:
@@ -114,8 +166,10 @@ async def _check_patient_history(args: Dict) -> str:
     patient_appts = [a for a in appts if a.get("patientId") == patient_id]
     if not patient_appts:
         return f"No appointment history found for patient {patient_id}."
-    lines = [f"- {a.get('date')} with Dr. {a.get('doctorName')} ({a.get('status')})"
-             for a in patient_appts]
+    lines = [
+        f"- {a.get('date')} with Dr. {a.get('doctorName')} ({a.get('status')})"
+        for a in patient_appts
+    ]
     return "Last visits:\n" + "\n".join(lines)
 
 
@@ -146,7 +200,10 @@ async def _create_appointment(args: Dict) -> str:
     }
     async with AsyncSessionLocal() as db:
         created = await crud.create_appointment(db, data)
-    return f"Appointment confirmed! ID: {created.get('id')}. Date: {data['date']} at {data['time']}."
+    return (
+        f"Appointment confirmed! ID: {created.get('id')}. "
+        f"Date: {data['date']} at {data['time']}."
+    )
 
 
 async def _cancel_appointment(args: Dict) -> str:
@@ -172,17 +229,17 @@ async def _reschedule_appointment(args: Dict) -> str:
 
 
 TOOL_MAP = {
-    "get_available_slots": _get_available_slots,
-    "get_doctor_profile": _get_doctor_profile,
+    "get_available_slots":   _get_available_slots,
+    "get_doctor_profile":    _get_doctor_profile,
     "check_patient_history": _check_patient_history,
-    "predict_wait_time": _predict_wait_time,
-    "create_appointment": _create_appointment,
-    "cancel_appointment": _cancel_appointment,
+    "predict_wait_time":     _predict_wait_time,
+    "create_appointment":    _create_appointment,
+    "cancel_appointment":    _cancel_appointment,
     "reschedule_appointment": _reschedule_appointment,
 }
 
 
-# ── ReAct loop ────────────────────────────────────────────────────────────────
+# ── ReAct loop (Ibrahim — one backward-compatible addition: task_type param) ──
 
 def _parse_tool_call(text: str) -> Optional[Dict]:
     """Try to parse a JSON tool call from LLM response."""
@@ -203,9 +260,19 @@ async def _run_react_loop(
     system: str,
     language: str,
     mode: str,
+    task_type: Optional[str] = None,   # ← added for voice_reasoning; None = auto
 ) -> str:
+    """
+    Core ReAct loop shared by both process_chat_message() and BookingAgent.run().
+
+    task_type: if None, auto-selects "urdu" or "reasoning" based on language.
+               Pass "voice_reasoning" explicitly from BookingAgent.run() voice path.
+    """
     max_steps = MAX_STEPS_VOICE if mode == "voice" else MAX_STEPS_TEXT
-    task_type = "urdu" if language == "ur" else "reasoning"
+
+    # Auto-determine task type only when not explicitly supplied.
+    if task_type is None:
+        task_type = "urdu" if language == "ur" else "reasoning"
 
     for step in range(max_steps):
         try:
@@ -223,7 +290,7 @@ async def _run_react_loop(
         tool_call = _parse_tool_call(text)
 
         if tool_call is None:
-            # Plain text response — done
+            # Plain text response — done.
             return text
 
         # Execute tool
@@ -255,7 +322,108 @@ async def _run_react_loop(
         return RECOVERY_MSG.get(language, RECOVERY_MSG["en"])
 
 
-# ── Main entry point ──────────────────────────────────────────────────────────
+# ── BookingAgent class (for AgentOrchestrator and voice pipeline) ─────────────
+
+class BookingAgent:
+    """
+    Voice-aware booking agent called by AgentOrchestrator.
+
+    AgentOrchestrator instantiates this as:
+        BookingAgent(llm_router=..., db=..., redis=...).run(message, session_id, language, mode)
+
+    The voice pipeline calls .run() which returns AgentResponse.
+    The text chat route calls process_chat_message() directly (below) — it does NOT use this class.
+
+    Redis is used for session history in both paths.
+    llm_router and db are module-level singletons used inside the tool implementations.
+    """
+
+    def __init__(
+        self,
+        llm_router=None,    # accepted for orchestrator compatibility; module-level singleton used
+        db=None,            # accepted for orchestrator compatibility; tools use AsyncSessionLocal()
+        redis=None,
+    ) -> None:
+        self._redis = redis
+
+    async def run(
+        self,
+        message: str,
+        session_id: str,
+        language: str = "en",
+        mode: str = "text",
+    ) -> AgentResponse:
+        """
+        Process a patient message and return a structured AgentResponse.
+
+        Called by AgentOrchestrator.handle_booking() for both text and voice.
+        Voice path uses PROMPT_VOICE (2-sentence constraint) + voice_reasoning task type.
+        Text path uses SYSTEM_TEXT (full tool descriptions) + reasoning/urdu task type.
+
+        Args:
+            message:    Patient's text (already transcribed if from voice pipeline).
+            session_id: Unique session identifier for Redis conversation history.
+            language:   Detected language code ("en" or "ur").
+            mode:       "text" for chat, "voice" for voice pipeline.
+
+        Returns:
+            AgentResponse with .message (text for TTS/display) and .appointment_data.
+        """
+        # Load Redis history
+        history: List[Dict] = []
+        if self._redis:
+            try:
+                history = await get_history(self._redis, session_id)
+            except Exception as e:
+                logger.error("BookingAgent: Redis get failed for %s: %s", session_id, e)
+
+        messages = history + [{"role": "user", "content": message}]
+
+        # Choose system prompt and task type based on mode
+        if mode == "voice":
+            system = PROMPT_VOICE          # 2-sentence constraint, tools listed
+            task_type = "voice_reasoning"  # routes to fastest Gemini model
+        else:
+            system = SYSTEM_TEXT           # full prompt with all rules
+            # Urdu text queries go to the Gemini-first "urdu" routing lane
+            task_type = "urdu" if language == "ur" else "reasoning"
+
+        # Run the shared ReAct loop
+        response_text = await _run_react_loop(
+            messages, system, language, mode, task_type=task_type
+        )
+
+        # Persist updated history
+        messages.append({"role": "assistant", "content": response_text})
+        if self._redis:
+            try:
+                await save_history(self._redis, session_id, messages)
+            except Exception as e:
+                logger.error("BookingAgent: Redis save failed for %s: %s", session_id, e)
+
+        # Lightweight intent detection for AgentResponse metadata
+        msg_lower = message.lower()
+        if any(kw in msg_lower for kw in ("book", "appointment", "schedule")):
+            intent = "booking_intent"
+        elif "cancel" in msg_lower:
+            intent = "cancel_intent"
+        elif any(kw in msg_lower for kw in ("reschedule", "change", "move")):
+            intent = "reschedule_intent"
+        else:
+            intent = "general_query"
+
+        return AgentResponse(
+            message=response_text,
+            appointment_data=None,  # orchestrator or voice_service extracts this if needed
+            intent=intent,
+        )
+
+
+# Singleton for direct imports (e.g., if any module imports booking_agent directly)
+booking_agent = BookingAgent()
+
+
+# ── process_chat_message (Ibrahim — DO NOT MODIFY) ────────────────────────────
 
 async def process_chat_message(
     user_id: str,
@@ -265,7 +433,7 @@ async def process_chat_message(
     mode: str = "text",
 ) -> Dict:
     """
-    Main entry point called by chat.py route.
+    Main entry point called by api/routes/chat.py.
     Handles Redis session memory, runs ReAct loop, returns response dict.
     """
     # Load history from Redis
@@ -280,7 +448,7 @@ async def process_chat_message(
     messages = history + [{"role": "user", "content": message}]
     system = SYSTEM_VOICE if mode == "voice" else SYSTEM_TEXT
 
-    # Run ReAct loop
+    # Run ReAct loop (task_type=None → auto-determined from language)
     response_text = await _run_react_loop(messages, system, language, mode)
 
     # Update history

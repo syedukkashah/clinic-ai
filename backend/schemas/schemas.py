@@ -198,6 +198,15 @@ class VoiceResponse(BaseModel):
     responseAudioBase64: Optional[str] = None
 
 
+class VoiceChatResponse(BaseModel):
+    """Response shape for POST /api/voice/chat (v5.0 voice pipeline)."""
+    transcript: str
+    text_response: str
+    audio_url: str
+    detected_lang: Literal["en", "ur"]
+    appointment: Optional[Dict[str, Any]] = None
+
+
 class OptimizationRequest(BaseModel):
     windowHoursAhead: int = 4
 
