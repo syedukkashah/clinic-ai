@@ -64,8 +64,8 @@ from groq import AsyncGroq, Groq
 from mistralai.async_client import MistralAsyncClient
 from mistralai.models.chat_completion import ChatMessage
 
-from backend.core.config import settings
-from backend.schemas.llm import LLMResponse
+from core.config import settings
+from schemas.llm import LLMResponse
 
 # --- Constants ---
 TASK_PROVIDER_PREFERENCE = {
