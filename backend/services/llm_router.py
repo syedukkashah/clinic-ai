@@ -143,42 +143,46 @@ class LLM_Router:
         last_error = None
 
         for provider in provider_preference:
-            key = self._get_next_key(provider)
-            if not key:
-                continue
-
-            try:
-                if provider == "groq":
-                    response = await self._call_groq(key, messages, system, temperature, max_tokens)
-                elif provider == "gemini":
-                    response = await self._call_gemini(key, messages, system, temperature, max_tokens)
-                elif provider == "mistral":
-                    response = await self._call_mistral(key, messages, system, temperature, max_tokens)
-                else:
-                    continue
-                
-                return response
-
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    print(f"Rate limit hit for {provider} with key ...{key[-4:]}. Blocking key and retrying.")
-                    self._block_key(key)
+            # Try all available keys for the current provider before moving to the next
+            while True:
+                key = self._get_next_key(provider)
+                if not key:
+                    # No more available (unblocked) keys for this provider
+                    break
+    
+                try:
+                    if provider == "groq":
+                        response = await self._call_groq(key, messages, system, temperature, max_tokens)
+                    elif provider == "gemini":
+                        response = await self._call_gemini(key, messages, system, temperature, max_tokens)
+                    elif provider == "mistral":
+                        response = await self._call_mistral(key, messages, system, temperature, max_tokens)
+                    else:
+                        # Should not happen with the literal type
+                        continue
+                    
+                    # If the call was successful, return the response immediately
+                    return response
+    
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        print(f"Rate limit hit for {provider} with key ...{key[-4:]}. Blocking key and retrying with next key.")
+                        self._block_key(key)
+                        last_error = e
+                        # Continue to the next key for the same provider
+                        continue
+                    else:
+                        print(f"HTTP error with {provider} using key ...{key[-4:]}: {e}. Trying next provider.")
+                        last_error = e
+                        # Break from the key loop to try the next provider
+                        break
+                except Exception as e:
+                    print(f"An unexpected error occurred with {provider} using key ...{key[-4:]}: {e}. Trying next provider.")
                     last_error = e
-                    # Immediately try next provider
-                    continue
-                else:
-                    print(f"HTTP error with {provider}: {e}")
-                    last_error = e
-                    continue # Try next provider
-            except Exception as e:
-                print(f"An unexpected error occurred with {provider}: {e}")
-                last_error = e
-                continue # Try next provider
-
-        raise AllProvidersExhausted(f"All LLM providers failed. Last error: {last_error}")
-
-    async def _call_groq(self, api_key: str, messages: List[Dict[str, str]], system: Optional[str], temperature: float, max_tokens: int) -> LLMResponse:
-        client = AsyncGroq(api_key=api_key)
+                    # Break from the key loop to try the next provider
+                    break
+    
+        raise AllProvidersExhausted(f"All LLM providers and their keys failed. Last error: {last_error}")
         if system:
             messages = [{"role": "system", "content": system}] + messages
         
