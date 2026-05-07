@@ -85,12 +85,15 @@ class RAGService:
     def __init__(self):
         self._client = None
         self._collection = None
-        self._embed_fn = _get_embedding_fn()
+        self._embed_fn = None
 
     def _init_client(self) -> None:
-        """Lazy-initialize ChromaDB client."""
+        """Lazy-initialize ChromaDB client and embedding function."""
         if self._client is not None:
             return
+        if self._embed_fn is None:
+            self._embed_fn = _get_embedding_fn()
+            
         CHROMA_PERSIST.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(CHROMA_PERSIST))
         self._collection = self._client.get_or_create_collection(
@@ -211,17 +214,21 @@ class RAGService:
             else "Respond in English."
         )
 
-        # Voice responses must be short (max 2 sentences) for TTS latency budgets.
-        # Text responses can be slightly longer (2-4 sentences).
-        sentence_constraint = "Respond in maximum 2 sentences." if mode == "voice" else "Keep your response to 2 to 4 sentences."
+        # Voice responses must be short (max 2 sentences) for TTS latency budgets, with NO markdown.
+        if mode == "voice":
+            sentence_constraint = "Respond in maximum 2 sentences. DO NOT use markdown, bullet points, or special formatting. Use plain conversational language."
+        else:
+            sentence_constraint = "Keep your response to 2 to 4 sentences. You may use simple markdown formatting."
 
-        prompt = f"""You are MediFlow clinic assistant.
-Answer ONLY using the context below. If the context does not contain the answer, say so and suggest calling 0800-MEDIFLOW.
-{sentence_constraint} Be friendly and clear.
+        prompt = f"""You are a professional MediFlow clinic assistant.
+Your ONLY source of information is the provided CONTEXT. 
+If the CONTEXT does not contain the exact answer, you MUST say: "I don't have that specific information. Please call 0800-MEDIFLOW." Do not guess or hallucinate.
+{sentence_constraint} Be friendly, empathetic, and clear.
 {lang_instruction}
 
-CONTEXT:
+--- CONTEXT ---
 {context}
+---------------
 
 PATIENT QUESTION: {user_question}
 

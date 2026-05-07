@@ -35,6 +35,19 @@ FAQs, visiting guidelines, parking, emergency guidance,
 pharmacy questions, medical certificates, prescription policies,
 medical records policy.
 
+EXAMPLES:
+Message: "I need to see a doctor tomorrow"
+OPERATIONAL
+
+Message: "What time do you open?"
+INFORMATIONAL
+
+Message: "Cancel my appointment for next week"
+OPERATIONAL
+
+Message: "Does Dr. Smith take insurance?"
+INFORMATIONAL
+
 Reply with ONLY the single word: OPERATIONAL or INFORMATIONAL
 
 Message: {message}"""

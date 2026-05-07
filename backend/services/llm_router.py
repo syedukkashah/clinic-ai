@@ -91,7 +91,7 @@ class LLM_Router:
         self._keys = {
             "groq": self._load_keys(settings.GROQ_API_KEYS),
             "gemini": self._load_keys(settings.GEMINI_API_KEYS),
-            "mistral": self._load_keys(settings.MISTRAL_API_KEYS),
+            "mistral": self._load_keys(settings.MISTRAL_API_KEYS) + self._load_keys(settings.TOGETHER_API_KEYS),
         }
         self._key_iterators = {
             provider: cycle(keys) for provider, keys in self._keys.items()
