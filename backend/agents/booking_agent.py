@@ -328,6 +328,7 @@ async def _run_react_loop(
     if task_type is None:
         task_type = "urdu" if language == "ur" else "reasoning"
 
+    response_text = ""
     for step in range(max_steps):
         try:
             response = await llm_router.call(
@@ -336,21 +337,21 @@ async def _run_react_loop(
                 system=system,
                 temperature=0.2,
             )
+            response_text = response.text.strip()
         except AllProvidersExhausted:
             logger.error("All LLM providers exhausted in BookingAgent")
             return RECOVERY_MSG.get(language, RECOVERY_MSG["en"])
 
-        text = response.text.strip()
-        tool_call = _parse_tool_call(text)
+        tool_call = _parse_tool_call(response_text)
 
         if tool_call is None:
             # If the model is narrating instead of calling a tool, nudge it once.
-            if any(kw in text.lower() for kw in ("check", "find", "looking", "let me")):
+            if any(kw in response_text.lower() for kw in ("check", "find", "looking", "let me")):
                 logger.info("BookingAgent: Nudging model to use tool instead of narrating")
-                messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "assistant", "content": response_text})
                 messages.append({"role": "user", "content": "Please provide the tool call in JSON format now. Do not narrate."})
                 continue
-            return text
+            return response_text
 
         # Execute tool
         tool_name = tool_call["tool"]
@@ -370,7 +371,7 @@ async def _run_react_loop(
             tool_result = f"Tool {tool_name} failed: {str(e)}"
 
         # Feed result back into conversation
-        messages.append({"role": "assistant", "content": text})
+        messages.append({"role": "assistant", "content": response_text})
         messages.append({"role": "user", "content": f"[Tool result: {tool_name}]\n{tool_result}"})
 
     # Max steps reached or model returned text. 
@@ -384,17 +385,17 @@ async def _run_react_loop(
             try:
                 final = await llm_router.call(messages=messages, task_type=task_type, system=system)
                 # If the retry has a tool call, the next turn will handle it, but for simplicity here:
-                text = final.text.strip()
-                tc = _parse_tool_call(text)
+                response_text = final.text.strip()
+                tc = _parse_tool_call(response_text)
                 if tc:
                     t_name = tc["tool"]
                     t_args = tc.get("args", {})
                     t_res = await TOOL_MAP[t_name](t_args)
-                    messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "assistant", "content": response_text})
                     messages.append({"role": "user", "content": f"[Tool result: {t_name}]\n{t_res}"})
                     final_resp = await llm_router.call(messages=messages, task_type=task_type, system=system)
                     return final_resp.text.strip()
-                return text
+                return response_text
             except Exception:
                 pass
 

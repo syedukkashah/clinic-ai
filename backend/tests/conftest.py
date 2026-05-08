@@ -4,6 +4,10 @@ from pathlib import Path
 # Add the backend directory to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import os
+from core.config import settings
+os.environ["TEST_DATABASE_URL"] = settings.TEST_DATABASE_URL
+
 import pytest
 import asyncio
 from fastapi.testclient import TestClient

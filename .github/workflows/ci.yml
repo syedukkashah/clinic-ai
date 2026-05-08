@@ -393,7 +393,6 @@ jobs:
           python -m pytest -v tests/integration/test_rag_flow.py
           python -m pytest -v tests/integration/test_voice_rag_flow.py
 
-<<<<<<< HEAD
   mlops-tests:
     name: MLOps Integration & Celery Tasks
     runs-on: ubuntu-latest
