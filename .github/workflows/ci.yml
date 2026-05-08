@@ -392,3 +392,105 @@ jobs:
           python -m pytest -v tests/unit/test_intent_router.py
           python -m pytest -v tests/integration/test_rag_flow.py
           python -m pytest -v tests/integration/test_voice_rag_flow.py
+
+
+  mlops-tests:
+    name: MLOps Tests (Drift Detection & Celery Tasks)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+ 
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+ 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+ 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+ 
+      - name: Wait for Redis
+        run: |
+          python -c "
+          import socket, time
+          for i in range(30):
+              try:
+                  s = socket.create_connection(('localhost', 6379), timeout=1)
+                  s.close()
+                  print('Redis is up!')
+                  break
+              except OSError:
+                  print(f'Waiting for Redis... ({i+1}/30)')
+                  time.sleep(1)
+          "
+ 
+      - name: Run drift detector tests
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: python -m pytest -v tests/test_drift_detector.py
+ 
+      - name: Run resolver task tests
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: python -m pytest -v tests/test_resolve_predictions.py
+ 
+      - name: Verify Celery task registration
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          python - <<'EOF'
+          from tasks.celery_app import celery_app
+          registered = list(celery_app.tasks.keys())
+          print("Registered tasks:", registered)
+          required = [
+              "tasks.resolve_predictions.resolve_completed_appointments",
+              "mlops.drift_detector.run_daily_drift_check",
+              "mlops.drift_detector.trigger_retraining",
+          ]
+          missing = [t for t in required if t not in registered]
+          if missing:
+              print("MISSING TASKS:", missing)
+              exit(1)
+          print("All required Celery tasks registered.")
+          EOF
+ 
+      - name: Verify beat schedule
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          python - <<'EOF'
+          import celeryconfig
+          schedule = celeryconfig.beat_schedule
+          print("Beat schedule entries:", list(schedule.keys()))
+          required = [
+              "resolve-predictions-hourly",
+              "daily-drift-check",
+          ]
+          missing = [k for k in required if k not in schedule]
+          if missing:
+              print("MISSING SCHEDULES:", missing)
+              exit(1)
+          print("All required beat schedules present.")
+          EOF

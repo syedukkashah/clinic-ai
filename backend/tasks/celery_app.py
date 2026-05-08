@@ -1,17 +1,18 @@
 import os
 from celery import Celery
 
-REDIS_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 celery_app = Celery(
-    "clinic_ai",
+    "mediflow",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=[
-        "tasks.retrain_task",
-        "tasks.resolve_predictions",
-        "tasks.ops_task"
-    ]
 )
 
 celery_app.config_from_object("celeryconfig")
+
+# Import tasks explicitly so they register
+import tasks.resolve_predictions  # noqa
+import mlops.drift_detector  # noqa
+import tasks.retrain_task  # noqa
+import tasks.scheduling_task  # noqa

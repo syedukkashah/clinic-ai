@@ -197,3 +197,6 @@ error.md
 
 # ChromaDB vector store — binary artifact, never commit
 backend/data/chroma_db/
+mediflow_dump.sql
+mediflow_dump_utf8.sql
+ml_service/data_/

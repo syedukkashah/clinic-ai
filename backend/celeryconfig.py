@@ -7,12 +7,18 @@ beat_schedule = {
         "task": "tasks.retrain_task.run_weekly_retraining",
         "schedule": crontab(day_of_week="sun", hour=2, minute=0),
     },
-    "daily-drift-checks": {
-        "task": "tasks.ops_task.run_daily_drift_checks",
-        "schedule": crontab(hour=0, minute=0),
+    "check-schedule-every-30-min": {
+        "task": "tasks.check_schedule_and_reassign",
+        "schedule": 1800.0,
     },
-    "hourly-prediction-resolution": {
-        "task": "tasks.resolve_predictions.run_hourly_resolution",
+    "resolve-predictions-hourly": {
+        "task": "tasks.resolve_predictions.resolve_completed_appointments",
         "schedule": crontab(minute=0),
     },
+    "daily-drift-check": {
+        "task": "mlops.drift_detector.run_daily_drift_check",
+        "schedule": crontab(hour=1, minute=0),
+    },
 }
+
+broker_connection_retry_on_startup = True

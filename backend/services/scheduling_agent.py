@@ -2,7 +2,9 @@ from sqlalchemy.orm import Session
 from db.models import Appointment, Doctor, Notification, OpsAlert
 from services.ml_service import ml_service_client
 from core.logging import get_logger
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
+UTC = timezone.utc
+from datetime import datetime, timedelta, timezone
 
 logger = get_logger(__name__)
 
