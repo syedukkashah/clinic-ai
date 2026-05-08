@@ -16,6 +16,7 @@ celery_app = Celery(
         "tasks.retrain_task",
         "tasks.scheduling_task",
         "tasks.resolve_predictions",
+        "mlops.drift_detector",
     ],
 )
 
@@ -39,7 +40,7 @@ celery_app.conf.beat_schedule = {
     },
     "weekly-retrain-load": {
         "task": "training.retrain_model",
-        "schedule": crontab(hour=2, minute=0, day_of_week=0),
+        "schedule": crontab(hour=2, minute=30, day_of_week=0),
         "kwargs": {"model_name": "patient_load_model", "reason": "scheduled_weekly"},
     },
     "daily-drift-check": {
@@ -47,7 +48,8 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0),
     },
     "hourly-resolve-predictions": {
-        "task": "tasks.resolve_predictions",
+        "task": "tasks.resolve_predictions.run_hourly_resolution",
         "schedule": crontab(minute=0),
     },
 }
+

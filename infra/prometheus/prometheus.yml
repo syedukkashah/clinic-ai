@@ -5,15 +5,16 @@ global:
 rule_files:
   - "alert_rules.yml"
 
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-            - alertmanager:9093
-
 scrape_configs:
   - job_name: mediflow_backend
     static_configs:
       - targets:
           - backend:8000
+          - api:8000
+    metrics_path: /metrics
+
+  - job_name: mediflow_ml
+    static_configs:
+      - targets:
+          - ml_service:8001
     metrics_path: /metrics

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 from sqlalchemy import select, update
 from db.session import AsyncSessionLocal
 from db.models import MLPrediction, Appointment, AppointmentStatus
@@ -37,11 +38,12 @@ async def run_hourly_resolution():
             
             if appt and appt.status == AppointmentStatus.COMPLETED and appt.actual_wait_minutes is not None:
                 pred.actual_value = appt.actual_wait_minutes
-                pred.resolved_at = asyncio.get_event_loop().time() # Placeholder for timestamp
+                pred.resolved_at = datetime.now(timezone.utc)
                 resolved_count += 1
         
         await db.commit()
-        logger.info(f"Resolved {resolved_count} predictions.")
+        logger.info(f"Resolved {resolved_count} predictions out of {len(pending_preds)} pending.")
 
 if __name__ == "__main__":
     asyncio.run(run_hourly_resolution())
+
