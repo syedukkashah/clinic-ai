@@ -4,7 +4,6 @@ from datetime import datetime, timezone, timedelta
 
 from celery import shared_task
 from sqlalchemy import select, func
-
 from db.session import AsyncSessionLocal
 from db.models import MLPrediction, OpsAlert
 from db import crud

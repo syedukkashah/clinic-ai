@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 @router.get("/suggestions", response_model=List[schemas.Suggestion])
 async def get_suggestions(db: AsyncSession = Depends(get_db)):
     # Pull unacknowledged alerts and extract their recommended actions as suggestions
-    alerts = await crud.get_ops_alerts(db)  # Muhammad's version — returns dicts
-    
+    alerts = await crud.get_ops_alerts(db)
+
     suggestions = []
     for alert in alerts:
         actions = alert.get("recommendedActions", [])
@@ -35,7 +35,7 @@ async def get_suggestions(db: AsyncSession = Depends(get_db)):
                 "impact": alert.get("reasoning", "")[:80],
                 "confidence": 0.85 if alert.get("severity") == "CRITICAL" else 0.72,
             })
-    
+
     # Fallback if no active alerts
     if not suggestions:
         suggestions = [
@@ -43,7 +43,7 @@ async def get_suggestions(db: AsyncSession = Depends(get_db)):
             {"id": "s2", "title": "Reassign 4 patients from Dr. Khan → Dr. Malik", "impact": "Balance load 91% → 74%", "confidence": 0.86},
             {"id": "s3", "title": "Send proactive SMS to 12 patients", "impact": "Reduce no-shows by 23%", "confidence": 0.78},
         ]
-    
+
     return suggestions
 
 

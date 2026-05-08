@@ -54,6 +54,7 @@ async def run_weekly_retraining():
     Called periodically by Celery Beat.
     """
     logger.info("Starting weekly model retraining...")
+    
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
