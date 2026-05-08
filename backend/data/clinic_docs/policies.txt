@@ -1,0 +1,37 @@
+MediFlow Clinic Policies
+ 
+BOOKING POLICY:
+- Appointments can be booked via text chat, voice note, phone call, or WebRTC call.
+- Walk-ins are accepted based on availability. Expected wait time is 30 to 90 minutes.
+- Same-day bookings are available for urgent cases when slots are open.
+- Maximum advance booking window is 21 days.
+- Each patient may book a maximum of 2 appointments per day.
+ 
+CANCELLATION POLICY:
+- Cancel or reschedule at least 2 hours before appointment at no charge.
+- Cancellation within 2 hours of appointment may incur a PKR 200 administrative fee.
+- No-show without any notice may result in full consultation fee charged on next visit.
+- Rescheduling is free and can be done unlimited times.
+ 
+WAITING AREA POLICY:
+- Maximum 2 attendants allowed per patient in consultation room.
+- Mobile phones must be on silent mode in the examination area.
+- Children must be supervised by an adult at all times.
+- Food and drinks are only allowed in the designated cafeteria area.
+- Smoking is strictly prohibited on all clinic premises.
+ 
+MEDICAL RECORDS POLICY:
+- Patients may request copies of their medical records with 48 hours advance notice.
+- Records are stored for a minimum of 7 years per Pakistani medical regulations.
+- Digital copies of records are available via request at reception.
+- Patient records are strictly confidential and shared only with treating doctors.
+- Information is disclosed to third parties only with explicit written patient consent.
+ 
+PRESCRIPTIONS:
+- Prescriptions are valid for 30 days from the date of issue.
+- Repeat prescriptions for chronic conditions require a follow-up visit every 3 months.
+- Lost prescriptions can be reissued with a PKR 100 administrative fee.
+ 
+PHOTOGRAPHY:
+- Photography inside examination rooms is strictly prohibited.
+- Photography in waiting areas is allowed for personal use only.

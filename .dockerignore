@@ -1,0 +1,56 @@
+# Build artifacts
+dist
+dist-admin
+dist-patient
+build
+out
+
+# Dependencies
+node_modules
+.venv
+venv
+env
+ENV
+
+# Cache
+.vite
+.cache
+.turbo
+.parcel-cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Version Control
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Sensitive data
+.env
+.env.*
+backend/.env
+ml_service/.env
+
+# Data & ML
+ml_service/mlruns
+ml_service/mlartifacts
+backend/data/chroma_db
+backend/data/clinic_docs/*.txt
+!backend/data/clinic_docs/
+
+# Local logs
+*.log
+logs/
+tmp/
+temp/

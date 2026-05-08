@@ -1,0 +1,188 @@
+# =========================
+# 🐍 Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# =========================
+# 📦 Jupyter Notebooks
+# =========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# =========================
+# 🧪 MLflow (VERY IMPORTANT)
+# =========================
+mlruns/
+mlartifacts/
+mlflow.db
+*.db
+
+# =========================
+# 📊 Data (DO NOT TRACK LARGE DATASETS)
+# =========================
+
+
+# If you WANT to keep schema files, allow JSON only:
+!data/*.json
+
+# =========================
+# 🤖 Model artifacts (optional safety)
+# =========================
+
+
+# Keep ONLY explicitly needed inference artifacts if required:
+# !data/wait_time_features.json
+# !data/wait_time_label_encoders.pkl
+
+# =========================
+# 🔐 Environment variables / secrets
+# =========================
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# =========================
+# 🧠 IDE / OS files
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# =========================
+# 🧪 Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# 🚀 Docker (if used)
+# =========================
+docker-compose.override.yml
+
+# =========================
+# 🧹 Misc
+# =========================
+*.tmp
+*.bak
+
+node_modules/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.pyre/
+
+.coverage
+coverage/
+htmlcov/
+
+.venv/
+venv/
+ENV/
+env/
+
+dist/
+build/
+*.egg-info/
+.eggs/
+
+*.db
+*.sqlite
+*.sqlite3
+mediflow.db
+
+.ipynb_checkpoints/
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.vite/
+.cache/
+.turbo/
+.parcel-cache/
+
+frontend/dist/
+frontend/dist-admin/
+frontend/dist-patient/
+frontend/.vite/
+frontend/.cache/
+frontend/.turbo/
+frontend/.parcel-cache/
+frontend/.wrangler/
+
+backend/.env
+ml_service/.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.env
+
+# Logs / builds
+*.txt
+
+# Data (if not required)
+
+
+# =========================
+# 🗑️ Debug / build artifacts (should never be committed)
+# =========================
+allfiles.txt
+build_output*.txt
+error.md
+*.pdf
+
+# =========================
+# 📚 RAG knowledge base — track clinic docs despite data/ and *.txt ignores
+# =========================
+!backend/data/
+!backend/data/clinic_docs/
+!backend/data/clinic_docs/*.txt
+
+# ChromaDB vector store — binary artifact, never commit
+backend/data/chroma_db/
+mediflow_dump.sql
+mediflow_dump_utf8.sql
+ml_service/data_/

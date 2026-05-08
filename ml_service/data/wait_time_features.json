@@ -1,0 +1,21 @@
+[
+  "patient_age",
+  "doctor_id",
+  "day_of_week",
+  "hour_of_day",
+  "booking_lead_days",
+  "appointments_before",
+  "queue_depth",
+  "avg_consult_duration",
+  "historical_wait_slot",
+  "week_of_year",
+  "is_follow_up",
+  "is_holiday",
+  "is_ramadan",
+  "is_day_after_holiday",
+  "specialty",
+  "urgency",
+  "season",
+  "patient_preferred_lang",
+  "booking_channel"
+]

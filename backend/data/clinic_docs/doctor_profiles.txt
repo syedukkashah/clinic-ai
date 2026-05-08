@@ -1,0 +1,113 @@
+MediFlow Doctor Profiles
+ 
+Dr. Ahmed Raza — General Medicine
+ID: 1
+Qualification: MBBS, FCPS Internal Medicine
+Experience: 15 years
+Specializes in: Diabetes management, hypertension, fever, infections, general consultations
+Languages: Urdu, English
+Consultation fee: PKR 1000
+Typical consult time: 9 minutes
+Available: Monday to Saturday 9am to 6pm
+ 
+Dr. Sara Malik — General Medicine
+ID: 2
+Qualification: MBBS, MCPS General Practice
+Experience: 10 years
+Specializes in: Women health, nutrition, preventive care
+Languages: Urdu, English
+Consultation fee: PKR 1000
+Typical consult time: 11 minutes
+Available: Monday to Saturday 10am to 7pm
+ 
+Dr. Kamran Iqbal — General Medicine
+ID: 3
+Qualification: MBBS, Diploma in Family Medicine
+Experience: 8 years
+Specializes in: Chronic disease management, elderly care, follow-ups
+Languages: Urdu, English, Punjabi
+Consultation fee: PKR 1000
+Typical consult time: 13 minutes
+Available: Monday to Friday 9am to 5pm
+ 
+Dr. Nadia Hussain — Cardiology
+ID: 4
+Qualification: MBBS, FCPS Cardiology, Fellowship London Royal College
+Experience: 18 years
+Specializes in: Interventional cardiology, heart failure, arrhythmia, ECG interpretation
+Languages: Urdu, English
+Consultation fee: PKR 3000
+Typical consult time: 18 minutes
+Available: Monday to Friday 10am to 5pm
+Note: Most in-demand cardiologist. Book at least 3 days in advance.
+ 
+Dr. Tariq Butt — Cardiology
+ID: 5
+Qualification: MBBS, FCPS Cardiology
+Experience: 12 years
+Specializes in: Preventive cardiology, hypertension, lipid disorders
+Languages: Urdu, English
+Consultation fee: PKR 2500
+Typical consult time: 15 minutes
+Available: Monday to Saturday 9am to 4pm
+ 
+Dr. Ayesha Khan — Pediatrics
+ID: 6
+Qualification: MBBS, FCPS Pediatrics
+Experience: 14 years
+Specializes in: Newborn care, childhood infections, vaccinations, growth monitoring
+Languages: Urdu, English
+Consultation fee: PKR 1500
+Typical consult time: 12 minutes
+Available: Monday to Saturday 9am to 6pm
+Note: Highly popular for pediatric cases. Walk-ins often wait 60 plus minutes.
+ 
+Dr. Bilal Chaudhry — Pediatrics
+ID: 7
+Qualification: MBBS, DCH, MCPS Pediatrics
+Experience: 9 years
+Specializes in: Childhood asthma, nutritional disorders, school health
+Languages: Urdu, English, Pashto
+Consultation fee: PKR 1200
+Typical consult time: 11 minutes
+Available: Tuesday to Sunday 10am to 7pm
+ 
+Dr. Zara Siddiqui — Dermatology
+ID: 8
+Qualification: MBBS, DDVL Dermatology
+Experience: 11 years
+Specializes in: Acne, eczema, psoriasis, hair loss, cosmetic procedures
+Languages: Urdu, English
+Consultation fee: PKR 1500
+Typical consult time: 10 minutes
+Available: Monday to Saturday 11am to 7pm
+ 
+Dr. Usman Qureshi — Dermatology
+ID: 9
+Qualification: MBBS, Diploma Dermatology
+Experience: 7 years
+Specializes in: General dermatology, fungal infections, wound care
+Languages: Urdu, English
+Consultation fee: PKR 1200
+Typical consult time: 11 minutes
+Available: Monday to Friday 9am to 5pm
+ 
+Dr. Hina Javed — Orthopedics
+ID: 10
+Qualification: MBBS, FCPS Orthopedics
+Experience: 16 years
+Specializes in: Joint replacement, sports injuries, spine disorders, fractures
+Languages: Urdu, English
+Consultation fee: PKR 2500
+Typical consult time: 16 minutes
+Available: Monday to Saturday 10am to 6pm
+ 
+Dr. Faisal Sheikh — Orthopedics
+ID: 11
+Qualification: MBBS, MS Orthopedic Surgery
+Experience: 13 years
+Specializes in: Physiotherapy referrals, bone density, fracture management
+Languages: Urdu, English
+Consultation fee: PKR 2000
+Typical consult time: 14 minutes
+Available: Monday to Saturday 9am to 5pm

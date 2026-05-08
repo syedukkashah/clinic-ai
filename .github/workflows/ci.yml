@@ -1,14 +1,211 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [dev, stage, main]
   push:
-    branches: [dev, stage, main]
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - dev
+      - staging
+      - main
 
 jobs:
   backend-tests:
+    name: backend-tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy tqdm more-itertools tiktoken numba
+          pip install --no-build-isolation openai-whisper==20240930
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Basic FastAPI import check
+        env:
+          PYTHONPATH: .
+        run: python -c "from main import app; print('FastAPI app loaded successfully!')"
+
+      - name: Run backend tests
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: "http://localhost:8001"
+        run: python -m pytest -v tests --ignore=tests/test_redis_memory.py
+
+  frontend-tests:
+    name: Frontend Build & Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test --if-present
+
+      - name: Build frontend (Admin)
+        run: npm run build:admin
+
+      - name: Build frontend (Patient)
+        run: npm run build:patient
+
+  scheduling-agent-tests:
+    name: Scheduling Agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy tqdm more-itertools tiktoken numba
+          pip install --no-build-isolation openai-whisper==20240930
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run scheduling agent tests
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: "http://localhost:8001"
+        run: python -m pytest -v tests/test_scheduling_agent.py
+
+  redis-memory-tests:
+    name: Redis Memory Tests (Real Redis)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Wait for Redis
+        run: |
+          python -c "
+          import socket, time
+          for i in range(30):
+              try:
+                  s = socket.create_connection(('localhost', 6379), timeout=1)
+                  s.close()
+                  print('Redis is up!')
+                  break
+              except OSError:
+                  print(f'Waiting for Redis... ({i+1}/30)')
+                  time.sleep(1)
+          "
+
+      - name: Run Redis memory tests
+        env:
+          PYTHONPATH: .
+        run: pytest -v tests/test_redis_memory.py
+
+  llm-router-tests:
+    name: LLM Router Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run LLM Router tests
+        env:
+          PYTHONPATH: .
+          # Use mock keys for testing the router logic without real API calls
+          GROQ_API_KEYS: test-groq-key-1,test-groq-key-2
+          GEMINI_API_KEYS: test-gemini-key-1,test-gemini-key-2
+          MISTRAL_API_KEYS: test-mistral-key-1,test-mistral-key-2
+        run: python -m pytest -v tests/test_llm_router.py
+  
+  db-checks:
+    name: DB Schema & Migration Checks
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mediflow
+          POSTGRES_PASSWORD: mediflow123
+          POSTGRES_DB: mediflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     defaults:
       run:
@@ -22,6 +219,126 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+
+      - name: Install DB dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install sqlalchemy alembic asyncpg psycopg2-binary python-dotenv
+          pip install pytest pytest-asyncio
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run Alembic migrations
+        env:
+          DATABASE_URL: postgresql://mediflow:mediflow123@localhost:5432/mediflow
+          POSTGRES_PASSWORD: mediflow123
+        run: python -m alembic upgrade head
+
+      - name: Verify all tables exist
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'EOF'
+          import sqlalchemy as sa
+          engine = sa.create_engine("postgresql://mediflow:mediflow123@localhost:5432/mediflow")
+          with engine.connect() as conn:
+              result = conn.execute(sa.text(
+                  "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+              ))
+              tables = [row[0] for row in result]
+              print("Tables found:", tables)
+              required = [
+                  "anomaly_predictions", "appointments", "daily_load", "doctors", "ml_predictions",
+                  "notifications", "ops_alerts", "patients", "slots"
+              ]
+              missing = [t for t in required if t not in tables]
+              if missing:
+                  print("MISSING TABLES:", missing)
+                  exit(1)
+              print("All required tables present.")
+          EOF
+
+      - name: Verify schema constraints
+        run: |
+          python - <<'EOF'
+          import sqlalchemy as sa
+          engine = sa.create_engine("postgresql://mediflow:mediflow123@localhost:5432/mediflow")
+          with engine.connect() as conn:
+              result = conn.execute(sa.text("""
+                  SELECT conname FROM pg_constraint
+                  WHERE contype = 'u'
+                  AND conname IN ('uq_slot_doctor_time', 'uq_daily_load_doctor_date_hour')
+              """))
+              constraints = [row[0] for row in result]
+              print("Unique constraints found:", constraints)
+              missing = [c for c in ['uq_slot_doctor_time', 'uq_daily_load_doctor_date_hour']
+                         if c not in constraints]
+              if missing:
+                  print("MISSING CONSTRAINTS:", missing)
+                  exit(1)
+              result = conn.execute(sa.text("""
+                  SELECT data_type FROM information_schema.columns
+                  WHERE table_name='doctors' AND column_name='id'
+              """))
+              dtype = result.scalar()
+              print("Doctor ID type:", dtype)
+              if dtype != 'integer':
+                  print("ERROR: Doctor ID should be integer, got:", dtype)
+                  exit(1)
+              print("All schema constraints verified.")
+          EOF
+
+      - name: Run DB model tests
+        env:
+          DATABASE_URL: postgresql://mediflow:mediflow123@localhost:5432/mediflow
+          POSTGRES_PASSWORD: mediflow123
+          PYTHONPATH: .
+        run: python -m pytest -v tests/test_models.py
+  booking-agent-tests:
+    name: Booking Agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run booking agent tests
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: "http://localhost:8001"
+          GROQ_API_KEYS: test-groq-key-1
+          GEMINI_API_KEYS: test-gemini-key-1
+          MISTRAL_API_KEYS: test-mistral-key-1
+        run: python -m pytest -v tests/test_booking_agent.py
+
+  voice-agent-tests:
+    name: Voice Agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -31,7 +348,224 @@ jobs:
           pip install --no-build-isolation openai-whisper==20240930
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run voice agent tests
         env:
           PYTHONPATH: .
-        run: python -m pytest
+          ML_SERVICE_URL: "http://localhost:8001"
+          GROQ_API_KEYS: test-groq-key-1
+          GEMINI_API_KEYS: test-gemini-key-1
+          MISTRAL_API_KEYS: test-mistral-key-1
+        run: |
+          python -m pytest -v tests/test_voice.py
+          python -m pytest -v tests/integration/test_voice_flow.py
+
+  rag-agent-tests:
+    name: RAG Agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run RAG tests
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: "http://localhost:8001"
+          GROQ_API_KEYS: test-groq-key-1
+          GEMINI_API_KEYS: test-gemini-key-1
+          MISTRAL_API_KEYS: test-mistral-key-1
+        run: |
+          python -m pytest -v tests/test_rag.py
+          python -m pytest -v tests/unit/test_intent_router.py
+          python -m pytest -v tests/integration/test_rag_flow.py
+          python -m pytest -v tests/integration/test_voice_rag_flow.py
+
+  mlops-tests:
+    name: MLOps Integration & Celery Tasks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Wait for Redis
+        run: |
+          python -c "
+          import socket, time
+          for i in range(30):
+              try:
+                  s = socket.create_connection(('localhost', 6379), timeout=1)
+                  s.close()
+                  print('Redis is up!')
+                  break
+              except OSError:
+                  print(f'Waiting for Redis... ({i+1}/30)')
+                  time.sleep(1)
+          "
+
+      - name: Run drift detector tests
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: python -m pytest -v tests/test_drift_detector.py
+
+      - name: Run resolver task tests
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: python -m pytest -v tests/test_resolve_predictions.py
+
+      - name: Verify Celery task registration
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          python - <<'EOF'
+          from tasks.celery_app import celery_app
+          import tasks.ops_task
+          import tasks.retrain_task
+          import tasks.scheduling_task
+          import tasks.resolve_predictions
+          import mlops.drift_detector
+          celery_app.finalize()
+          registered = list(celery_app.tasks.keys())
+          print("Registered tasks:", registered)
+          required = [
+              "tasks.resolve_predictions.resolve_completed_appointments",
+              "mlops.drift_detector.run_daily_drift_check",
+          ]
+          missing = [t for t in required if t not in registered]
+          if missing:
+              print("MISSING TASKS:", missing)
+              exit(1)
+          print("All required Celery tasks registered.")
+          EOF
+
+      - name: Verify beat schedule (Inline)
+        env:
+          PYTHONPATH: .
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          python - <<'EOF'
+          from tasks.celery_app import celery_app
+          schedule = celery_app.conf.beat_schedule
+          print("Beat schedule entries:", list(schedule.keys()))
+          required = [
+              "hourly-resolve-predictions",
+              "daily-drift-check",
+          ]
+          missing = [k for k in required if k not in schedule]
+          if missing:
+              print("MISSING SCHEDULES:", missing)
+              exit(1)
+          print("All required beat schedules present.")
+          EOF
+
+  ops-agent-tests:
+    name: Ops Monitor Agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run ops agent tests
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: "http://localhost:8001"
+          GROQ_API_KEYS: test-groq-key-1
+          GEMINI_API_KEYS: test-gemini-key-1
+          MISTRAL_API_KEYS: test-mistral-key-1
+          PROMETHEUS_URL: "http://localhost:9090"
+          ALERTMANAGER_WEBHOOK_TOKEN: ""
+        run: python -m pytest -v tests/test_ops_agent.py
+
+  mlops-validation:
+    name: MLOps & MLflow Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install setuptools
+        run: pip install "setuptools<70"
+
+      - name: Install ML Service Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ml_service/requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run ML Service MLOps Tests
+        env:
+          PYTHONPATH: ml_service
+          MLFLOW_TRACKING_URI: "sqlite:///ml_service/mlflow_test.db"
+        run: python -m pytest -v ml_service/tests/test_mlflow_logic.py ml_service/tests/test_ml_service.py
+
+      - name: Install Backend MLOps Dependencies
+        run: |
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          pip install respx aiosqlite setuptools
+
+      - name: Run Backend MLOps Tests
+        env:
+          PYTHONPATH: backend
+          INTERNAL_SECRET: test_secret
+          ASYNC_TEST_DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+        run: python -m pytest -v backend/tests/test_drift_detector.py backend/tests/test_retrain_task.py

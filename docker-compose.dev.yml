@@ -1,0 +1,177 @@
+name: mediflow-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=mediflow
+      - POSTGRES_USER=mediflow
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=${JWT_SECRET}
+      - GEMINI_API_KEYS=${GEMINI_API_KEYS}
+      - GROQ_API_KEYS=${GROQ_API_KEYS}
+      - TOGETHER_API_KEYS=${TOGETHER_API_KEYS}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./ml_service/data:/ml_service/data
+      - chroma_data:/app/data/chroma_db
+    depends_on:
+      - postgres
+      - redis
+      - mlflow
+
+  ml_service:
+    build:
+      context: ./ml_service
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ml_service:/app
+      - mlflow_data:/mlflow
+    depends_on:
+      - postgres
+      - mlflow
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
+    volumes:
+      - ./backend:/app
+      - ./ml_service/data:/ml_service/data
+    depends_on:
+      - postgres
+      - redis
+      - ml_service
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
+    volumes:
+      - ./backend:/app
+      - ./ml_service/data:/ml_service/data
+    depends_on:
+      - postgres
+      - redis
+      - ml_service
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.2
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+    volumes:
+      - mlflow_data:/mlflow
+
+  frontend_admin:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        BUILD_MODE: admin
+        VITE_PATIENT_PORTAL_URL: http://localhost:5174/patient
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  frontend_patient:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        BUILD_MODE: patient
+        VITE_ADMIN_PORTAL_URL: http://localhost:5173/login
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infra/prometheus/alert_manager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.1.5
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  grafana_data:
+  chroma_data:
+  mlflow_data:
