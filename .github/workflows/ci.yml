@@ -248,8 +248,8 @@ jobs:
               tables = [row[0] for row in result]
               print("Tables found:", tables)
               required = [
-                  "appointments", "daily_load", "doctors", "ml_predictions",
-                  "notifications", "ops_alerts", "patients", "predictions", "slots"
+                  "anomaly_predictions", "appointments", "daily_load", "doctors", "ml_predictions",
+                  "notifications", "ops_alerts", "patients", "slots"
               ]
               missing = [t for t in required if t not in tables]
               if missing:
