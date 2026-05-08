@@ -1,6 +1,5 @@
 {
   "name": "tanstack_start_ts",
-  "vercel_fix": "v2",
   "private": true,
   "sideEffects": false,
   "type": "module",
