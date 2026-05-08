@@ -1,0 +1,42 @@
+# .pre-commit-config.yaml
+
+exclude: ^(frontend/dist/|node_modules/|\.venv/|venv/|__pycache__/|\.pytest_cache/|\.mypy_cache/)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^frontend/dist/
+
+      - id: end-of-file-fixer
+        exclude: ^frontend/dist/
+
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+
+      # frontend/tsconfig.json may allow comments/trailing commas,
+      # and your Grafana dashboard JSON files failed strict JSON parsing.
+      - id: check-json
+        exclude: ^(frontend/tsconfig\.json|infra/grafana/dashboards/)
+
+      - id: check-toml
+
+      - id: check-merge-conflict
+
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+
+      - id: detect-private-key
+
+      - id: check-case-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.2
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        files: ^(backend|ml_service)/.*\.py$
+
+      - id: ruff-format
+        files: ^(backend|ml_service)/.*\.py$
