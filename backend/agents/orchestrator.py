@@ -13,9 +13,17 @@ import logging
 from agents.booking_agent import AgentResponse, booking_agent
 from services.intent_router import route_intent
 from services.rag_service import rag_service
+from typing import Optional, Dict, Any
+from sqlalchemy.ext.asyncio import AsyncSession
+from prometheus_client import Counter
 
 logger = logging.getLogger(__name__)
 
+PROM_AGENT_STEPS = Counter(
+    "mediflow_agent_steps_total",
+    "Agent tool calls",
+    ["agent", "tool"]
+)
 
 class AgentOrchestrator:
     """Routes incoming requests via intent classification."""
@@ -76,6 +84,20 @@ class AgentOrchestrator:
                 lang,
                 mode,
             )
+            
+    async def run_ops_monitor(
+        self,
+        trigger: str = "scheduled",
+        context: Optional[Dict[str, Any]] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> Dict[str, Any]:
+        from agents.ops_agent import ops_monitor_agent
+        PROM_AGENT_STEPS.labels(agent="ops_monitor", tool="run").inc()
+        return await ops_monitor_agent.run(
+            trigger=trigger,
+            context=context or {},
+            db=db,
+        )
 
 
 orchestrator = AgentOrchestrator()

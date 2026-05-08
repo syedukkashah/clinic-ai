@@ -498,3 +498,153 @@ async def check_db(db: AsyncSession) -> Dict[str, Any]:
         counts[t] = r.scalar()
 
     return {"status": "connected", "tables": counts}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  OPS MONITORING AGENT ALERTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from datetime import datetime
+from typing import Optional, List
+from sqlalchemy import func, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from db.models import OpsAlert, Appointment, Slot, Notification, MLPrediction
+
+
+async def get_booking_counts_bucketed(
+    db: AsyncSession, since: datetime, bucket_minutes: int = 5
+) -> List:
+    result = await db.execute(
+        text("""
+            SELECT date_trunc('hour', created_at) +
+                   INTERVAL '1 minute' * :bucket * FLOOR(
+                       EXTRACT(MINUTE FROM created_at) / :bucket
+                   ) AS bucket,
+                   COUNT(*) AS count
+            FROM appointments
+            WHERE created_at >= :since
+            GROUP BY bucket
+            ORDER BY bucket
+        """),
+        {"since": since, "bucket": bucket_minutes}
+    )
+    return result.fetchall()
+
+
+async def create_ops_alert(
+    db: AsyncSession, message: str, severity: str,
+    channel: str = "admin", agent: str = "ops_monitor"
+) -> OpsAlert:
+    alert = OpsAlert(
+        message=message, severity=severity,
+        channel=channel, agent=agent
+    )
+    db.add(alert)
+    await db.commit()
+    await db.refresh(alert)
+    return alert
+
+
+async def get_ops_alerts(
+    db: AsyncSession, limit: int = 50,
+    severity: Optional[str] = None
+) -> List[OpsAlert]:
+    query = select(OpsAlert).order_by(OpsAlert.created_at.desc()).limit(limit)
+    if severity:
+        query = query.where(OpsAlert.severity == severity)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def create_slots_for_doctor(
+    db: AsyncSession, doctor_id: int, date: datetime,
+    specialty: str, count: int
+) -> List[Slot]:
+    slots = []
+    for i in range(count):
+        slot = Slot(
+            doctor_id=doctor_id,
+            specialty=specialty,
+            start_time=date,
+            is_available=True
+        )
+        db.add(slot)
+        slots.append(slot)
+    await db.commit()
+    return slots
+
+
+async def get_recent_predictions(
+    db: AsyncSession, model_name: str,
+    since: datetime, resolved_only: bool = True
+) -> List[MLPrediction]:
+    query = select(MLPrediction).where(
+        MLPrediction.model_name == model_name,
+        MLPrediction.predicted_at >= since
+    )
+    if resolved_only:
+        query = query.where(MLPrediction.actual_value.isnot(None))
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def get_baseline_distribution(
+    db: AsyncSession, model_name: str
+) -> Optional[List[float]]:
+    result = await db.execute(
+        select(MLPrediction.predicted_value).where(
+            MLPrediction.model_name == model_name,
+            MLPrediction.actual_value.isnot(None)
+        ).limit(1000)
+    )
+    rows = result.scalars().all()
+    return [float(r) for r in rows] if rows else None
+
+
+async def count_appointments_since(
+    db: AsyncSession, since: datetime
+) -> int:
+    result = await db.execute(
+        select(func.count()).where(Appointment.created_at >= since)
+    )
+    return result.scalar() or 0
+
+
+async def count_cancellations_since(
+    db: AsyncSession, since: datetime
+) -> int:
+    result = await db.execute(
+        select(func.count()).where(
+            Appointment.created_at >= since,
+            Appointment.status == "CANCELLED"
+        )
+    )
+    return result.scalar() or 0
+
+
+async def get_avg_predicted_wait(
+    db: AsyncSession, since: datetime
+) -> Optional[float]:
+    result = await db.execute(
+        select(func.avg(MLPrediction.predicted_value)).where(
+            MLPrediction.model_name == "wait_time_model",
+            MLPrediction.predicted_at >= since
+        )
+    )
+    return result.scalar()
+
+
+async def create_notification(
+    db: AsyncSession, recipient_id: int, recipient_type: str,
+    message: str, lang: str = "en"
+) -> Notification:
+    notif = Notification(
+        recipient_id=recipient_id,
+        recipient_type=recipient_type,
+        message=message,
+        lang=lang
+    )
+    db.add(notif)
+    await db.commit()
+    await db.refresh(notif)
+    return notif

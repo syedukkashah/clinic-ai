@@ -1,3 +1,15 @@
+# ── ADD THESE IMPORTS at the top of ops.py ──────────────────────────────────
+import logging
+from typing import Any, Dict, Optional
+from fastapi import BackgroundTasks, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from agents.orchestrator import orchestrator
+from core.config import settings
+from db.session import get_db
+
+logger = logging.getLogger(__name__)
+
 import time
 from typing import List
 
@@ -59,3 +71,101 @@ def get_agents():
 @router.get("/metrics", response_model=schemas.ClinicMetrics)
 def get_metrics():
     return MOCK_METRICS
+
+class AlertmanagerLabel(BaseModel):
+    alertname: str
+    severity: Optional[str] = None
+    class Config:
+        extra = "allow"
+
+class AlertmanagerAnnotation(BaseModel):
+    summary: Optional[str] = None
+    description: Optional[str] = None
+    class Config:
+        extra = "allow"
+
+class AlertmanagerAlert(BaseModel):
+    status: str
+    labels: AlertmanagerLabel
+    annotations: Optional[AlertmanagerAnnotation] = None
+    startsAt: Optional[str] = None
+    endsAt: Optional[str] = None
+    fingerprint: Optional[str] = None
+
+class AlertmanagerPayload(BaseModel):
+    version: str = "4"
+    status: str
+    alerts: List[AlertmanagerAlert] = []
+    groupLabels: Optional[Dict[str, str]] = {}
+    commonLabels: Optional[Dict[str, str]] = {}
+    commonAnnotations: Optional[Dict[str, str]] = {}
+
+class ManualTriggerRequest(BaseModel):
+    trigger: str = "scheduled"
+    context: Optional[Dict[str, Any]] = {}
+
+
+# --- Real endpoints ---
+
+@router.post("/webhook/prometheus", status_code=202)
+async def prometheus_webhook(
+    payload: AlertmanagerPayload,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    x_alertmanager_token: Optional[str] = Header(None, alias="X-Alertmanager-Token"),
+):
+    if settings.ALERTMANAGER_WEBHOOK_TOKEN:
+        if x_alertmanager_token != settings.ALERTMANAGER_WEBHOOK_TOKEN:
+            raise HTTPException(status_code=403, detail="Invalid webhook token")
+
+    firing_alerts = [a for a in payload.alerts if a.status == "firing"]
+    if not firing_alerts:
+        return {"accepted": True, "firing_count": 0}
+
+    for alert in firing_alerts:
+        context = {
+            "alertname": alert.labels.alertname,
+            "severity": alert.labels.severity or "unknown",
+            "labels": alert.labels.model_dump(exclude_none=True),
+            "summary": (alert.annotations.summary if alert.annotations else ""),
+            "description": (alert.annotations.description if alert.annotations else ""),
+        }
+        background_tasks.add_task(
+            _run_ops_agent_safe, trigger="prometheus_webhook", context=context, db=db
+        )
+
+    return {"accepted": True, "firing_count": len(firing_alerts)}
+
+
+@router.post("/run")
+async def manual_run(
+    body: ManualTriggerRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await orchestrator.run_ops_monitor(
+        trigger=body.trigger, context=body.context, db=db
+    )
+
+
+@router.get("/alerts")
+async def list_alerts(
+    limit: int = Query(default=50, le=200),
+    severity: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    from db import crud
+    alerts = await crud.get_ops_alerts(db, limit=limit, severity=severity)
+    return [
+        {"id": a.id, "message": a.message, "severity": a.severity.value.lower(),
+         "channel": a.channel, "agent": a.agent, "created_at": a.created_at.isoformat()}
+        for a in alerts
+    ]
+
+
+# --- Helper ---
+
+async def _run_ops_agent_safe(trigger: str, context: Dict, db: AsyncSession):
+    try:
+        await orchestrator.run_ops_monitor(trigger=trigger, context=context, db=db)
+    except Exception as exc:
+        logger.error("OpsAgent background run failed — trigger=%s error=%s", trigger, exc, exc_info=True)
