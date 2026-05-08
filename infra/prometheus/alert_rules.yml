@@ -1,0 +1,50 @@
+groups:
+  - name: mediflow
+    rules:
+      - alert: HighBookingVolume
+        expr: rate(mediflow_appointments_booked_total[5m]) > 1
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Booking surge detected"
+          description: "Booking rate is {{ $value | humanize }} bookings/min"
+
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(mediflow_request_duration_seconds_bucket[5m])) > 2.0
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency above SLO"
+          description: "p95={{ $value | humanize }}s (SLO: 2.0s)"
+
+      - alert: LLMKeyPoolExhausted
+        expr: mediflow_key_pool_available == 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "LLM provider key pool exhausted"
+          description: "All keys for {{ $labels.provider }} are rate-limited"
+
+      - alert: HighVoiceWER
+        expr: mediflow_stt_wer > 0.20
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "STT word error rate degraded"
+          description: "WER={{ $value | humanizePercentage }} (threshold 20%)"
+
+      - alert: HighVoiceTTFB
+        expr: mediflow_voice_ttfb_seconds > 1.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Voice TTS time-to-first-byte high"
+          description: "TTFB={{ $value | humanize }}s (threshold 1.5s)"
+
+      - alert: CeleryWorkerDown
+        expr: mediflow_celery_workers_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "All Celery workers are down"
+          description: "No responsive Celery workers detected. Scheduling, drift detection, retraining, and prediction resolver are all offline."

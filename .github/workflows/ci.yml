@@ -248,8 +248,8 @@ jobs:
               tables = [row[0] for row in result]
               print("Tables found:", tables)
               required = [
-                  "appointments", "daily_load", "doctors", "ml_predictions",
-                  "notifications", "ops_alerts", "patients", "predictions", "slots"
+                  "anomaly_predictions", "appointments", "daily_load", "doctors", "ml_predictions",
+                  "notifications", "ops_alerts", "patients", "slots"
               ]
               missing = [t for t in required if t not in tables]
               if missing:
@@ -393,14 +393,13 @@ jobs:
           python -m pytest -v tests/integration/test_rag_flow.py
           python -m pytest -v tests/integration/test_voice_rag_flow.py
 
-
   mlops-tests:
     name: MLOps Tests (Drift Detection & Celery Tasks)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
- 
+
     services:
       redis:
         image: redis:7-alpine
@@ -411,22 +410,21 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 5
- 
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
- 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
- 
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
- 
+
       - name: Wait for Redis
         run: |
           python -c "
@@ -441,19 +439,19 @@ jobs:
                   print(f'Waiting for Redis... ({i+1}/30)')
                   time.sleep(1)
           "
- 
+
       - name: Run drift detector tests
         env:
           PYTHONPATH: .
           REDIS_URL: redis://localhost:6379/0
         run: python -m pytest -v tests/test_drift_detector.py
- 
+
       - name: Run resolver task tests
         env:
           PYTHONPATH: .
           REDIS_URL: redis://localhost:6379/0
         run: python -m pytest -v tests/test_resolve_predictions.py
- 
+
       - name: Verify Celery task registration
         env:
           PYTHONPATH: .
@@ -474,7 +472,7 @@ jobs:
               exit(1)
           print("All required Celery tasks registered.")
           EOF
- 
+
       - name: Verify beat schedule
         env:
           PYTHONPATH: .
@@ -494,3 +492,35 @@ jobs:
               exit(1)
           print("All required beat schedules present.")
           EOF
+
+  ops-agent-tests:
+    name: Ops Monitor Agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools<70" wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run ops agent tests
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: http://localhost:8001
+          GROQ_API_KEYS: test-groq-key-1
+          GEMINI_API_KEYS: test-gemini-key-1
+          MISTRAL_API_KEYS: test-mistral-key-1
+          PROMETHEUS_URL: http://localhost:9090
+          ALERTMANAGER_WEBHOOK_TOKEN: ""
+        run: python -m pytest -v tests/test_ops_agent.py

@@ -32,6 +32,9 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
     ports:
       - "8000:8000"
     volumes:
@@ -57,6 +60,48 @@ services:
     depends_on:
       - postgres
       - mlflow
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
+    volumes:
+      - ./backend:/app
+      - ./ml_service/data:/ml_service/data
+    depends_on:
+      - postgres
+      - redis
+      - ml_service
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
+    volumes:
+      - ./backend:/app
+      - ./ml_service/data:/ml_service/data
+    depends_on:
+      - postgres
+      - redis
+      - ml_service
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.10.2
@@ -103,6 +148,15 @@ services:
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infra/prometheus/alert_manager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   grafana:
     image: grafana/grafana:11.1.5

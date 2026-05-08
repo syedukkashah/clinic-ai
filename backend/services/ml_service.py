@@ -5,7 +5,7 @@ from core.logging import get_logger
 
 logger = get_logger(__name__)
 
-ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://ml-service:8001")
+ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://ml_service:8001")
 
 class MLServiceClient:
     def __init__(self, base_url: str = ML_SERVICE_URL):

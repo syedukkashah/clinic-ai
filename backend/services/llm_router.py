@@ -210,7 +210,7 @@ class LLM_Router:
 
     async def _call_gemini(self, api_key: str, messages: List[Dict[str, str]], system: Optional[str], temperature: float, max_tokens: int, model_override: Optional[str] = None) -> LLMResponse:
         genai.configure(api_key=api_key)
-        model_name = model_override or 'gemini-1.5-flash-latest'
+        model_name = model_override or 'gemini-1.5-flash'
         model = genai.GenerativeModel(
             model_name,
             system_instruction=system

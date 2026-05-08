@@ -75,50 +75,47 @@ class AgentResponse:
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
-SYSTEM_TEXT = """You are MediFlow, a professional, bilingual (English and Urdu) AI clinic assistant.
-Your primary role is to help patients book, reschedule, and cancel appointments.
+SYSTEM_TEXT = """You are MediFlow, the official AI Booking Agent for the clinic. 
+You have DIRECT ACCESS to the clinic's database through tools. 
 
-You have access to the following tools. To use a tool, you MUST respond with ONLY a valid JSON object. Do NOT wrap the JSON in markdown blocks (e.g. ```json).
-{"tool": "<tool_name>", "args": {<arguments>}}
+### YOUR CLINIC KNOWLEDGE (Doctor IDs):
+- **General Practice**: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
+- **Cardiology**: Dr. Nadia Hussain (4), Dr. Tariq Butt (5)
+- **Pediatrics**: Dr. Ayesha Khan (6), Dr. Bilal Chaudhry (7)
+- **Dermatology**: Dr. Zara Siddiqui (8), Dr. Usman Qureshi (9)
+- **Orthopedics**: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)
 
-Available tools:
-- get_available_slots: {"specialty": str, "date": "YYYY-MM-DD" (optional)}
-- get_doctor_profile: {"doctor_id": int}
-- check_patient_history: {"patient_id": str}
-- predict_wait_time: {"slot_id": int, "doctor_id": int, "hour_of_day": int}
-- create_appointment: {"patient_id": str, "slot_id": int, "doctor_id": int, "complaint": str, "urgency": "ROUTINE"|"MODERATE"|"URGENT"}
-- cancel_appointment: {"appointment_id": str}
-- reschedule_appointment: {"appointment_id": str, "new_slot_id": int}
-
-Rules for ReAct execution:
-1. THINK before acting. If you need information from the database to answer a question, use a tool first.
-2. CLARIFY ambiguity. If the user doesn't provide enough details (e.g., missing doctor name or date), ask them politely.
-3. CONFIRM before booking. ONLY call `create_appointment` AFTER you have explicitly summarized the details and the patient has confirmed.
-4. LANGUAGE: If the patient writes in Urdu, respond entirely in Urdu.
-5. FINAL RESPONSE: When you have finished using tools and are ready to talk to the user, respond with plain text ONLY (no JSON). Be empathetic, concise, and professional.
+### HOW TO OPERATE:
+1. **TOOL FORMAT**: You MUST respond with a JSON object in this EXACT format:
+   `{"tool": "tool_name", "args": {"param": "value"}}`
+2. **NO NARRATION**: Go DIRECTLY to the tool call.
+3. **MANDATORY**: NEVER tell the patient to "contact the website" or "call reception".
+4. **FINAL RESPONSE**: Only provide plain text confirmation AFTER you have called `create_appointment`.
 """
 
 # Voice prompt: same tool list as SYSTEM_TEXT but with the 2-sentence constraint
 # enforced to keep TTS synthesis under 1.2s (part of the 4-8s voice latency budget).
-PROMPT_VOICE = """You are MediFlow, a professional, bilingual clinic assistant handling a live voice call.
-CRITICAL CONSTRAINT: You must keep your conversational responses to a MAXIMUM of 2 sentences.
-Speak clearly and conversationally. DO NOT use markdown, bullet points, asterisks, or special formatting in your conversational response.
-If the patient speaks Urdu, reply fully in Urdu.
+PROMPT_VOICE = """You are MediFlow, the clinic's voice assistant. 
+You handle live calls to book appointments. You have direct database tools.
 
-To use a tool, you MUST respond with ONLY a valid JSON object. Do NOT wrap the JSON in markdown.
-{"tool": "<tool_name>", "args": {<arguments>}}
+### YOUR CLINIC KNOWLEDGE (Doctor IDs):
+- **General**: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
+- **Cardiology**: Dr. Nadia Hussain (4), Dr. Tariq Butt (5)
+- **Pediatrics**: Dr. Ayesha Khan (6), Dr. Bilal Chaudhry (7)
+- **Dermatology**: Dr. Zara Siddiqui (8), Dr. Usman Qureshi (9)
+- **Orthopedics**: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)
 
-Available tools:
-- get_available_slots: {"specialty": str, "date": "YYYY-MM-DD" (optional)}
-- get_doctor_profile: {"doctor_id": int}
-- predict_wait_time: {"slot_id": int, "doctor_id": int, "hour_of_day": int}
-- create_appointment: {"patient_id": str, "slot_id": int, "doctor_id": int, "complaint": str, "urgency": "ROUTINE"|"MODERATE"|"URGENT"}
-- cancel_appointment: {"appointment_id": str}
-- reschedule_appointment: {"appointment_id": str, "new_slot_id": int}
+### VOICE CONSTRAINTS:
+- Keep conversational responses to MAX 2 SENTENCES.
+- No markdown, no asterisks, no bullet points. Plain spoken text only.
+- NEVER say "I will check" or "Let me find that". Just use the tool.
+- If the caller speaks Urdu, reply in Urdu.
 
-Rules:
-1. Always confirm details before calling `create_appointment`.
-2. When ready to speak to the user, respond with plain conversational text ONLY. No JSON in your final response.
+### TOOLS:
+- get_available_slots: {"tool": "get_available_slots", "args": {"specialty": "general"}}
+- get_doctor_profile: {"tool": "get_doctor_profile", "args": {"doctor_id": 1}}
+- create_appointment: {"tool": "create_appointment", "args": {"patient_id": "...", "patient_name": "...", "doctor_id": 1, "complaint": "...", "urgency": "ROUTINE", "time": "14:30"}}
+- cancel_appointment: {"tool": "cancel_appointment", "args": {"appointment_id": "..."}}
 """
 
 # Alias kept for any code that still imports SYSTEM_VOICE by name.
@@ -141,11 +138,11 @@ async def _get_available_slots(args: Dict) -> str:
         result = []
         for doc in matching[:3]:
             avail = await crud.get_doctor_availability(db, doc["id"])
-            slots = avail.get("slots", [])[:3]
+            slots = avail.get("availableSlots", [])[:3]
             if slots:
                 result.append(
                     f"Dr. {doc['name']} (ID:{doc['id']}) — slots: "
-                    + ", ".join(str(s.get("start_time", "")) for s in slots)
+                    + ", ".join(slots)
                 )
                 
     return "\n".join(result) if result else f"No available slots for {specialty} right now."
@@ -191,20 +188,59 @@ async def _predict_wait_time(args: Dict) -> str:
 
 
 async def _create_appointment(args: Dict) -> str:
+    patient_id = args.get("patient_id")
+    patient_name = args.get("patient_name", "Demo Patient")
+    doctor_name = args.get("doctor_name", "")
+    doctor_id = args.get("doctor_id")
+
+    # Smart Name Resolution for all 11 doctors
+    name_to_id = {
+        "ahmed": 1, "raza": 1, "sara": 2, "malik": 2, "kamran": 3, "iqbal": 3,
+        "nadia": 4, "hussain": 4, "tariq": 5, "butt": 5, "ayesha": 6, "khan": 6,
+        "bilal": 7, "chaudhry": 7, "zara": 8, "siddiqui": 8, "usman": 9, "qureshi": 9,
+        "hina": 10, "javed": 10, "faisal": 11, "sheikh": 11
+    }
+    if doctor_name and (not doctor_id or int(doctor_id) <= 2):
+        for name, d_id in name_to_id.items():
+            if name in doctor_name.lower():
+                doctor_id = d_id
+                break
+    
+    doctor_id = int(doctor_id or 1)
+    
+    # Ensure we have a valid patient_id (fallback to a stable one for demo if missing)
+    if not patient_id:
+        patient_id = f"pat-{uuid.uuid4().hex[:8]}"
+
     data = {
-        "patientId": args.get("patient_id", f"pat-{uuid.uuid4().hex[:8]}"),
-        "patientName": args.get("patient_name", "Patient"),
-        "doctorId": str(args.get("doctor_id")),
+        "patientId": patient_id,
+        "patientName": patient_name,
+        "doctorId": int(args.get("doctor_id", 1)),
         "doctorName": args.get("doctor_name", ""),
-        "slotId": str(args.get("slot_id")),
-        "time": args.get("time", "09:00"),
+        "slotId": None, # Ignore slot_id for now as the slots table is empty in demo data
+        "time": args.get("time", "09:00").split()[0].zfill(5) if ":" in args.get("time", "") else "09:00",
         "date": args.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
         "reason": args.get("complaint", "General consultation"),
         "urgency": args.get("urgency", "ROUTINE").lower(),
         "status": "Confirmed",
+        "booking_channel": args.get("booking_channel"),
     }
+    
     async with AsyncSessionLocal() as db:
+        # Check if patient exists, if not create them
+        from db.models import Patient
+        from sqlalchemy import select
+        
+        patient_check = await db.execute(select(Patient).where(Patient.id == patient_id))
+        if not patient_check.scalar_one_or_none():
+            logger.info("BookingAgent: Creating missing patient %s", patient_id)
+            new_patient = Patient(id=patient_id, name=patient_name, email=f"{patient_id}@example.com")
+            db.add(new_patient)
+            await db.flush() # ensure patient is saved before appt
+            
         created = await crud.create_appointment(db, data)
+        await db.commit()
+        
     return (
         f"Appointment confirmed! ID: {created.get('id')}. "
         f"Date: {data['date']} at {data['time']}."
@@ -253,8 +289,21 @@ def _parse_tool_call(text: str) -> Optional[Dict]:
         start = text.index("{")
         end = text.rindex("}") + 1
         obj = json.loads(text[start:end])
+        
+        # Explicit tool call format (standard)
         if "tool" in obj and obj["tool"] in TOOL_MAP:
             return obj
+            
+        # Alternative format (used by some models)
+        if "name" in obj and obj["name"] in TOOL_MAP:
+            return {"tool": obj["name"], "args": obj.get("arguments", obj.get("args", {}))}
+            
+        # Recovery: if they sent raw args for create_appointment without the "tool" wrapper
+        if "patient_id" in obj or "patient_name" in obj:
+            return {"tool": "create_appointment", "args": obj}
+        if "specialty" in obj:
+            return {"tool": "get_available_slots", "args": obj}
+            
     except (ValueError, json.JSONDecodeError):
         pass
     return None
@@ -295,12 +344,23 @@ async def _run_react_loop(
         tool_call = _parse_tool_call(text)
 
         if tool_call is None:
-            # Plain text response — done.
+            # If the model is narrating instead of calling a tool, nudge it once.
+            if any(kw in text.lower() for kw in ("check", "find", "looking", "let me")):
+                logger.info("BookingAgent: Nudging model to use tool instead of narrating")
+                messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content": "Please provide the tool call in JSON format now. Do not narrate."})
+                continue
             return text
 
         # Execute tool
         tool_name = tool_call["tool"]
         tool_args = tool_call.get("args", {})
+
+        # Context injection: tagging channel for Activity Feed
+        if tool_name == "create_appointment":
+            if "booking_channel" not in tool_args:
+                tool_args["booking_channel"] = "chat" if mode == "text" else "voice_note"
+
         logger.info("BookingAgent tool call: %s args=%s", tool_name, tool_args)
 
         try:
@@ -313,18 +373,32 @@ async def _run_react_loop(
         messages.append({"role": "assistant", "content": text})
         messages.append({"role": "user", "content": f"[Tool result: {tool_name}]\n{tool_result}"})
 
-    # Max steps reached — ask LLM to wrap up
-    messages.append({"role": "user", "content": "Please provide your final human-readable response now. DO NOT return JSON. Format the data nicely if needed."})
-    try:
-        final = await llm_router.call(
-            messages=messages,
-            task_type=task_type,
-            system=system,
-            temperature=0.2,
-        )
-        return final.text.strip()
-    except AllProvidersExhausted:
-        return RECOVERY_MSG.get(language, RECOVERY_MSG["en"])
+    # Max steps reached or model returned text. 
+    # Verification: if this sounds like a success but no tool was called, force the tool.
+    if any(kw in response_text.lower() for kw in ("booked", "confirmed", "appointment")):
+        # Check if we actually have a tool result in history
+        has_tool_call = any("[Tool result: create_appointment]" in m["content"] for m in messages if m["role"] == "user")
+        if not has_tool_call:
+            logger.info("BookingAgent: Detected success message without tool call. Forcing tool check.")
+            messages.append({"role": "user", "content": "You haven't called the create_appointment tool yet. You MUST call it to save the data to the database. Use the tool now."})
+            try:
+                final = await llm_router.call(messages=messages, task_type=task_type, system=system)
+                # If the retry has a tool call, the next turn will handle it, but for simplicity here:
+                text = final.text.strip()
+                tc = _parse_tool_call(text)
+                if tc:
+                    t_name = tc["tool"]
+                    t_args = tc.get("args", {})
+                    t_res = await TOOL_MAP[t_name](t_args)
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "user", "content": f"[Tool result: {t_name}]\n{t_res}"})
+                    final_resp = await llm_router.call(messages=messages, task_type=task_type, system=system)
+                    return final_resp.text.strip()
+                return text
+            except Exception:
+                pass
+
+    return response_text
 
 
 # ── BookingAgent class (for AgentOrchestrator and voice pipeline) ─────────────

@@ -6,8 +6,9 @@ from core.config import settings
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from api.routes import (
     alerts, analytics, appointments, auth, chat, doctors, health,
     ops, predictions, scheduling,
@@ -105,6 +106,11 @@ def swagger_ui():
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy", "version": "1.0.0"}
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 class PortalHub:

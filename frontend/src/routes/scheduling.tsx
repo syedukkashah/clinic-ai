@@ -19,9 +19,11 @@ const HOURS = Array.from({ length: 11 }, (_, i) => 8 + i); // 08..18
 
 function SchedulingPage() {
   const qc = useQueryClient();
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  
   const { data: paginatedData } = useQuery({
-    queryKey: ["appointments", 0], // Get first page for the grid
-    queryFn: () => listAppointments({ limit: 1000 }), // Get more for the grid view
+    queryKey: ["appointments", todayStr], 
+    queryFn: () => listAppointments({ date: todayStr, limit: 1000 }), 
   });
   const appointments = paginatedData?.items ?? [];
 
@@ -36,7 +38,16 @@ function SchedulingPage() {
   const grid = useMemo(() => {
     const map = new Map<string, typeof appointments>();
     appointments.forEach((a) => {
-      const hr = parseInt(a.time.split(":")[0]);
+      // Robustly parse hour: handle "09:00", "9:00", "9:00 AM", etc.
+      const timeStr = a.time || "09:00";
+      const match = timeStr.match(/(\d+)/);
+      if (!match) return;
+      
+      let hr = parseInt(match[1]);
+      // Simple AM/PM detection if present
+      if (timeStr.toLowerCase().includes("pm") && hr < 12) hr += 12;
+      if (timeStr.toLowerCase().includes("am") && hr === 12) hr = 0;
+
       const key = `${a.doctorId}-${hr}`;
       const arr = map.get(key) ?? [];
       arr.push(a);

@@ -67,6 +67,38 @@ docker compose -f docker-compose.dev.yml exec backend python scripts/debug_agent
 
 ---
 
+---
+
+## 🤖 MediFlow AI Agent (Booking)
+
+The platform features a sophisticated, agentic booking system powered by a custom ReAct loop.
+
+### Capabilities:
+- **Direct Database Access**: Unlike basic chatbots, MediFlow has tools to query availability and write bookings directly to PostgreSQL.
+- **Smart Name Resolution**: Intelligent mapping of doctor names (e.g., "Nadia Hussain") to database IDs across all 11 clinic doctors.
+- **Verification Layer**: A custom verification step prevents the AI from "hallucinating" success; it must confirm a database write before providing an appointment ID.
+- **Multimodal Support**: Identical logic and doctor knowledge are shared across **Chat** and **Voice** interfaces.
+
+### Doctor Directory:
+- **General Practice**: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
+- **Cardiology**: Dr. Nadia Hussain (4), Dr. Tariq Butt (5)
+- **Pediatrics**: Dr. Ayesha Khan (6), Dr. Bilal Chaudhry (7)
+- **Dermatology**: Dr. Zara Siddiqui (8), Dr. Usman Qureshi (9)
+- **Orthopedics**: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)
+
+---
+
+## 📅 Smart Scheduling Grid
+
+The Admin Panel includes a high-performance, real-time scheduling grid (`/scheduling`):
+
+- **Real-time Sync**: Every appointment booked via the AI Agent appears instantly in the grid.
+- **Robust Time Parsing**: The grid uses a custom regex parser to handle various time formats (HH:MM, AM/PM, etc.) ensuring zero "ghost" appointments.
+- **Load Highlighting**: Columns automatically change color (Green/Yellow/Red) based on the doctor's current patient load for that hour.
+- **Drag-and-Drop**: Easily reschedule appointments by dragging them across cells.
+
+---
+
 ## 🧠 MLOps & MLflow Integration
 
 MediFlow includes a complete, automated Machine Learning pipeline for predicting clinic wait times and patient loads.

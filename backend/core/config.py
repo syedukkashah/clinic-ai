@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     ASYNC_TEST_DATABASE_URL: str = "sqlite+aiosqlite:///./test.db"
     POSTGRES_PASSWORD: str = "mediflow123"
     REDIS_URL: str = "redis://localhost:6379"
+    PROMETHEUS_URL: str = "http://prometheus:9090"
+    ALERTMANAGER_WEBHOOK_TOKEN: str = ""   # empty = no auth check (dev mode)
+    EXPECTED_CELERY_WORKERS: list[str] = []  # e.g. ["celery@worker1"]
 
     GEMINI_API_KEYS: str = ""
     GROQ_API_KEYS: str = ""
@@ -24,6 +27,7 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str = ""
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
+    OPENROUTER_API_KEYS: str = ""
 
     class Config:
         env_file = ".env"

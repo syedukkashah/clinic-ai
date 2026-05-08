@@ -40,11 +40,19 @@ services:
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
     volumes:
       - chroma_data:/app/data/chroma_db
     depends_on:
       - postgres
       - redis
+      - ml_service
+    networks:
+      default:
+        aliases:
+          - backend
     restart: always
 
   ml_service:
@@ -73,6 +81,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
     depends_on:
       - postgres
       - redis
@@ -86,6 +97,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ML_SERVICE_URL=http://ml_service:8001
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
     depends_on:
       - postgres
       - redis
@@ -115,6 +129,14 @@ services:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prom_data:/prometheus
+    restart: always
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./infra/prometheus/alert_manager.yml:/etc/alertmanager/alertmanager.yml:ro
     restart: always
 
   grafana:

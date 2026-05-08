@@ -15,12 +15,14 @@ export async function listAppointments(params: {
   search?: string;
   doctor_id?: string;
   status?: string;
+  date?: string;
 } = {}) {
-  const { limit = 50, offset = 0, search, doctor_id, status } = params;
+  const { limit = 50, offset = 0, search, doctor_id, status, date } = params;
   let url = `appointments/?limit=${limit}&offset=${offset}`;
   if (search) url += `&search=${encodeURIComponent(search)}`;
   if (doctor_id && doctor_id !== "all") url += `&doctor_id=${doctor_id}`;
   if (status && status !== "all") url += `&status=${status}`;
+  if (date) url += `&date=${date}`;
   
   const { data } = await api.get<PaginatedAppointments>(url);
   return data;
