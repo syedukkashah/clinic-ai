@@ -41,6 +41,13 @@ class Appointment(BaseModel):
     urgency: Optional[Literal["routine", "moderate", "urgent"]] = None
 
 
+class PaginatedAppointments(BaseModel):
+    items: List[Appointment]
+    total: int
+    limit: int
+    offset: int
+
+
 class AppointmentCreate(BaseModel):
     patientName: str
     patientId: str
@@ -182,6 +189,7 @@ class ChatMessage(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    responseText: str
     agentId: str
     intent: Optional[str] = None
     suggestedActions: Optional[List[Dict[str, Any]]] = None

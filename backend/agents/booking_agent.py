@@ -94,7 +94,7 @@ Rules:
 - If you need information to answer, use a tool first.
 - Only call create_appointment after the patient explicitly confirms.
 - If the patient writes in Urdu, respond in Urdu.
-- When done, respond with plain text (no JSON).
+- When done, respond with ONLY plain text. DO NOT include JSON in your final answer.
 - Be concise and friendly.
 """
 
@@ -115,7 +115,7 @@ Available tools:
 - cancel_appointment: {"appointment_id": str}
 - reschedule_appointment: {"appointment_id": str, "new_slot_id": int}
 
-When done, respond with plain text only. No JSON in your final response.
+When done, respond with ONLY plain text. NEVER include JSON in your final response to the patient.
 """
 
 # Alias kept for any code that still imports SYSTEM_VOICE by name.
@@ -309,7 +309,7 @@ async def _run_react_loop(
         messages.append({"role": "user", "content": f"[Tool result: {tool_name}]\n{tool_result}"})
 
     # Max steps reached — ask LLM to wrap up
-    messages.append({"role": "user", "content": "Please give your final response now."})
+    messages.append({"role": "user", "content": "Please provide your final human-readable response now. DO NOT return JSON. Format the data nicely if needed."})
     try:
         final = await llm_router.call(
             messages=messages,
@@ -461,6 +461,7 @@ async def process_chat_message(
 
     return {
         "response": response_text,
+        "responseText": response_text,
         "agentId": "booking_agent",
         "intent": None,
         "suggestedActions": [],

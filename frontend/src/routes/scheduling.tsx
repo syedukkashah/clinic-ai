@@ -19,10 +19,12 @@ const HOURS = Array.from({ length: 11 }, (_, i) => 8 + i); // 08..18
 
 function SchedulingPage() {
   const qc = useQueryClient();
-  const { data: appointments = [] } = useQuery({
-    queryKey: ["appointments"],
-    queryFn: listAppointments,
+  const { data: paginatedData } = useQuery({
+    queryKey: ["appointments", 0], // Get first page for the grid
+    queryFn: () => listAppointments({ limit: 1000 }), // Get more for the grid view
   });
+  const appointments = paginatedData?.items ?? [];
+
   const { data: doctors = [] } = useQuery({ queryKey: ["doctors"], queryFn: listDoctors });
 
   const updateMut = useMutation({
@@ -45,7 +47,7 @@ function SchedulingPage() {
 
   const [drag, setDrag] = useState<{ id: string; from: string } | null>(null);
 
-  const drop = (toDoctorId: string, toHour: number) => {
+  const drop = (toDoctorId: number, toHour: number) => {
     if (!drag) return;
     const apt = appointments.find((a) => a.id === drag.id);
     if (!apt) return;
@@ -158,7 +160,7 @@ function SchedulingPage() {
                           title={`${a.patientName} — ${a.reason}`}
                         >
                           <span className="truncate">{a.patientName}</span>
-                          {a.urgency === "high" && (
+                          {a.urgency === "urgent" && (
                             <span className="size-1.5 rounded-full bg-destructive shrink-0 ml-1 animate-pulse" />
                           )}
                         </motion.div>

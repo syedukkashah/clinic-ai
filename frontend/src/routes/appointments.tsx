@@ -42,30 +42,63 @@ const STATUS_STYLES: Record<AppointmentStatus, string> = {
 
 function AppointmentsPage() {
   const qc = useQueryClient();
-  const { data: appointments = [] } = useQuery({
-    queryKey: ["appointments"],
-    queryFn: listAppointments,
-  });
-  const { data: doctors = [] } = useQuery({ queryKey: ["doctors"], queryFn: listDoctors });
+  const [page, setPage] = useState(0);
+  const limit = 50;
+
   const [q, setQ] = useState("");
   const [doctor, setDoctor] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
   const [editing, setEditing] = useState<Appointment | null>(null);
 
+  // Reset to first page when search or filters change
+  const handleFilterChange = (type: 'q' | 'doctor' | 'status', val: string) => {
+    if (type === 'q') setQ(val);
+    if (type === 'doctor') setDoctor(val);
+    if (type === 'status') setStatus(val);
+    setPage(0);
+  };
+
+  const { data: paginatedData, isLoading, isError } = useQuery({
+    queryKey: ["appointments", page, q, doctor, status],
+    queryFn: () => listAppointments({ 
+      limit, 
+      offset: page * limit, 
+      search: q, 
+      doctor_id: doctor, 
+      status 
+    }),
+  });
+
+  const { data: doctors = [] } = useQuery({ queryKey: ["doctors"], queryFn: listDoctors });
   const updateMut = useMutation({
     mutationFn: (params: { id: string; patch: Partial<Appointment> }) =>
       apiUpdateAppointment(params.id, params.patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["appointments"] }),
   });
 
-  const filtered = useMemo(() => {
-    return appointments.filter((a) => {
-      if (doctor !== "all" && a.doctorId !== doctor) return false;
-      if (status !== "all" && a.status !== status) return false;
-      if (q && !a.patientName.toLowerCase().includes(q.toLowerCase())) return false;
-      return true;
-    });
-  }, [appointments, q, doctor, status]);
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="size-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+        <p className="text-muted-foreground animate-pulse">Loading appointments...</p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-8 text-center">
+        <div className="bg-destructive/10 text-destructive p-4 rounded-xl inline-block mb-4 border border-destructive/20">
+          Failed to load appointments. Please check your connection.
+        </div>
+        <br />
+        <Button onClick={() => window.location.reload()} variant="outline">Retry</Button>
+      </div>
+    );
+  }
+
+  const appointments = paginatedData?.items ?? [];
+  const total = paginatedData?.total ?? 0;
 
   const cancel = (id: string) => {
     updateMut.mutate({ id, patch: { status: "Cancelled" } });
@@ -73,6 +106,7 @@ function AppointmentsPage() {
       description: "Patient will be notified via SMS & WhatsApp.",
     });
   };
+
   const reassign = (id: string) => {
     const apt = appointments.find((a) => a.id === id);
     if (!apt) return;
@@ -105,7 +139,7 @@ function AppointmentsPage() {
         <div>
           <h1 className="font-display font-bold text-3xl tracking-tight">Appointments</h1>
           <p className="text-muted-foreground">
-            {filtered.length} of {appointments.length} appointments today
+            {total.toLocaleString()} total appointments found
           </p>
         </div>
       </div>
@@ -117,24 +151,24 @@ function AppointmentsPage() {
             <Input
               placeholder="Search patient..."
               value={q}
-              onChange={(e) => setQ(e.target.value)}
+              onChange={(e) => handleFilterChange('q', e.target.value)}
               className="pl-9"
             />
           </div>
-          <Select value={doctor} onValueChange={setDoctor}>
+          <Select value={doctor} onValueChange={(v) => handleFilterChange('doctor', v)}>
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Doctor" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All doctors</SelectItem>
               {doctors.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
+                <SelectItem key={d.id} value={String(d.id)}>
                   {d.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={status} onValueChange={setStatus}>
+          <Select value={status} onValueChange={(v) => handleFilterChange('status', v)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -178,7 +212,7 @@ function AppointmentsPage() {
             </thead>
             <tbody>
               <AnimatePresence initial={false}>
-                {filtered.slice(0, 60).map((a, i) => (
+                {appointments.map((a, i) => (
                   <motion.tr
                     key={a.id}
                     initial={{ opacity: 0 }}
@@ -249,6 +283,35 @@ function AppointmentsPage() {
             </tbody>
           </table>
         </div>
+        <div className="p-4 border-t border-border/40 flex items-center justify-between bg-muted/20">
+          <div className="text-sm text-muted-foreground">
+            Showing {page * limit + 1} to {Math.min((page + 1) * limit, total)} of {total.toLocaleString()}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 0}
+              onClick={() => {
+                setPage(p => p - 1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={(page + 1) * limit >= total}
+              onClick={() => {
+                setPage(p => p + 1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </div>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
@@ -306,12 +369,12 @@ function AppointmentsPage() {
               <div className="space-y-1.5">
                 <Label>Doctor</Label>
                 <Select
-                  value={editing.doctorId}
+                  value={String(editing.doctorId)}
                   onValueChange={(v) =>
                     setEditing({
                       ...editing,
-                      doctorId: v,
-                      doctorName: doctors.find((d) => d.id === v)?.name ?? "",
+                      doctorId: Number(v),
+                      doctorName: doctors.find((d) => String(d.id) === v)?.name ?? "",
                     })
                   }
                 >
@@ -320,7 +383,7 @@ function AppointmentsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {doctors.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
+                      <SelectItem key={d.id} value={String(d.id)}>
                         {d.name}
                       </SelectItem>
                     ))}

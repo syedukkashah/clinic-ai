@@ -25,15 +25,17 @@ services:
       - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
       - REDIS_URL=redis://redis:6379
       - SECRET_KEY=${JWT_SECRET}
-      - GEMINI_API_KEY=${GEMINI_API_KEYS}
-      - GROQ_API_KEY=${GROQ_API_KEYS}
-      - TOGETHER_API_KEY=${TOGETHER_API_KEYS}
+      - GEMINI_API_KEYS=${GEMINI_API_KEYS}
+      - GROQ_API_KEYS=${GROQ_API_KEYS}
+      - TOGETHER_API_KEYS=${TOGETHER_API_KEYS}
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
     ports:
       - "8000:8000"
     volumes:
+      - ./backend:/app
+      - ./ml_service/data:/ml_service/data
       - chroma_data:/app/data/chroma_db
     depends_on:
       - postgres
@@ -47,6 +49,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
     ports:
       - "8001:8001"
+    volumes:
+      - ./ml_service:/app
     depends_on:
       - postgres
 
@@ -56,8 +60,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILD_MODE: admin
-        VITE_API_BASE_URL: http://127.0.0.1:8000/api
-        VITE_PATIENT_PORTAL_URL: http://127.0.0.1:5174/patient
+        VITE_PATIENT_PORTAL_URL: http://localhost:5174/patient
     ports:
       - "5173:80"
     depends_on:
@@ -69,8 +72,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILD_MODE: patient
-        VITE_API_BASE_URL: http://127.0.0.1:8000/api
-        VITE_ADMIN_PORTAL_URL: http://127.0.0.1:5173/login
+        VITE_ADMIN_PORTAL_URL: http://localhost:5173/login
     ports:
       - "5174:80"
     depends_on:

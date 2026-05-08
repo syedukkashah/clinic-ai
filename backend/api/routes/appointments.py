@@ -14,13 +14,23 @@ from schemas import schemas
 router = APIRouter()
 
 
-@router.get("/", response_model=List[schemas.Appointment])
+@router.get("/", response_model=schemas.PaginatedAppointments)
 async def get_appointments(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None),
+    doctor_id: Optional[int] = Query(None),
+    status: Optional[AppointmentStatus] = Query(None),
 ):
-    return await crud.get_appointments(db, limit=limit, offset=offset)
+    return await crud.get_appointments(
+        db, 
+        limit=limit, 
+        offset=offset, 
+        search=search, 
+        doctor_id=doctor_id, 
+        status=status
+    )
 
 
 @router.post("/", response_model=schemas.Appointment)

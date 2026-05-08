@@ -355,6 +355,28 @@ async def reload_models(
 
     return ReloadResponse(reloaded=["wait_time_model", "patient_load_model"], status="ok")
 
+
+@app.post("/retrain")
+async def retrain_models(
+    x_internal_secret: Optional[str] = Header(None),
+):
+    """Trigger retraining of models."""
+    if INTERNAL_SECRET and x_internal_secret != INTERNAL_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid or missing secret")
+
+    from training.retrain_all import retrain_all_models
+    import asyncio
+    
+    # Run retraining in a background thread or process to not block FastAPI
+    # For now, we'll just call it directly since it's a small dataset in this demo
+    # In production, this would be a separate Celery task in the ML container
+    results = retrain_all_models()
+    
+    # Reload models after retraining
+    await reload_models(x_internal_secret=x_internal_secret)
+    
+    return {"status": "success", "results": results}
+
 @app.post("/predict/patient-load", response_model=LoadForecastResponse)
 async def predict_patient_load(
     request: LoadForecastRequest,

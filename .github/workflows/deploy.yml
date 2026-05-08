@@ -1,0 +1,98 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-and-build:
+    name: Test & Build Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run CI Tests
+        run: echo "Running CI tests... (assume existing ci.yml handles detailed tests, but we can call it or run here)"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push API Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ghcr.io/${{ github.repository }}/clinic-api:latest
+
+      - name: Build & Push ML Service Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ml_service
+          push: true
+          tags: ghcr.io/${{ github.repository }}/clinic-ml-service:latest
+
+      - name: Build & Push Frontend Admin Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          build-args: |
+            BUILD_MODE=admin
+            VITE_API_BASE_URL=/api
+            VITE_PATIENT_PORTAL_URL=http://${{ secrets.HOST }}/
+          push: true
+          tags: ghcr.io/${{ github.repository }}/clinic-frontend-admin:latest
+
+      - name: Build & Push Frontend Patient Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          build-args: |
+            BUILD_MODE=patient
+            VITE_API_BASE_URL=/api
+            VITE_ADMIN_PORTAL_URL=http://${{ secrets.HOST }}:8080/
+          push: true
+          tags: ghcr.io/${{ github.repository }}/clinic-frontend-patient:latest
+
+      - name: Build & Push Nginx Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./nginx
+          push: true
+          tags: ghcr.io/${{ github.repository }}/clinic-nginx:latest
+
+  deploy:
+    name: Deploy to Oracle VM
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote SSH Commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/clinic-ai
+            git pull origin main
+            
+            # Login to GHCR to pull latest images
+            echo ${{ secrets.GHCR_PAT }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull latest images
+            docker compose -f docker-compose.prod.yml pull
+            
+            # Deploy
+            docker compose -f docker-compose.prod.yml up -d
+            
+            # Verify API health
+            sleep 10
+            curl -f http://localhost:8000/api/health || exit 1

@@ -8,8 +8,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 from sqlalchemy import create_engine, text
 
-DB_URL = "postgresql://mediflow:{}@localhost:5432/mediflow".format(
-    os.environ.get("POSTGRES_PASSWORD", "mediflow123")
+DB_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://mediflow:{}@localhost:5432/mediflow".format(
+        os.environ.get("POSTGRES_PASSWORD", "mediflow123")
+    )
 )
 
 engine = create_engine(DB_URL)

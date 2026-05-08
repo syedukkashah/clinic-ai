@@ -27,9 +27,18 @@ try:
 except ImportError:
     pass  # dotenv optional — fall back to shell env
 
-DB_URL = "postgresql://mediflow:{}@localhost:5432/mediflow".format(
-    os.environ.get("POSTGRES_PASSWORD", "mediflow123")
-)
+# Priority 1: Use the full DATABASE_URL if available (set in docker-compose)
+DB_URL = os.environ.get("DATABASE_URL")
+if DB_URL:
+    # SQLAlchemy engine needs 'postgresql://' (not +psycopg2) for simple cases, 
+    # but psycopg2-binary is installed, so it should handle it.
+    DB_URL = DB_URL.replace("postgresql+psycopg2://", "postgresql://")
+else:
+    # Priority 2: Build it from components (fallback for local runs)
+    DB_URL = "postgresql://mediflow:{}@{}:5432/mediflow".format(
+        os.environ.get("POSTGRES_PASSWORD", "mediflow123"),
+        os.environ.get("POSTGRES_HOST", "postgres")
+    )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -147,10 +156,7 @@ def seed_doctors(conn):
 
 # ── Step 2: Patients ──────────────────────────────────────────────────────────
 def seed_patients(conn, df: pd.DataFrame):
-    count = conn.execute(text("SELECT COUNT(*) FROM patients")).scalar()
-    if count:
-        print(f"  ⏭  Patients already seeded ({count} rows). Skipping.")
-        return
+    """Seed patients from appointments data."""
 
     unique = df[['patient_id', 'patient_preferred_lang']].drop_duplicates(subset='patient_id')
     records = [
@@ -174,10 +180,7 @@ def seed_patients(conn, df: pd.DataFrame):
 
 # ── Step 3: Appointments ──────────────────────────────────────────────────────
 def seed_appointments(conn, df: pd.DataFrame):
-    count = conn.execute(text("SELECT COUNT(*) FROM appointments")).scalar()
-    if count:
-        print(f"  ⏭  Appointments already seeded ({count} rows). Skipping.")
-        return
+    """Seed appointments from CSV."""
 
     # Valid enum values — guard against dirty CSV data
     VALID_URGENCY = {'ROUTINE', 'MODERATE', 'URGENT'}
@@ -246,10 +249,7 @@ def seed_appointments(conn, df: pd.DataFrame):
 
 # ── Step 4: Daily load ────────────────────────────────────────────────────────
 def seed_daily_load(conn):
-    count = conn.execute(text("SELECT COUNT(*) FROM daily_load")).scalar()
-    if count:
-        print(f"  ⏭  Daily load already seeded ({count} rows). Skipping.")
-        return
+    """Seed daily load forecasts."""
 
     df = pd.read_csv(DAILY_LOAD_CSV)
     print(f"  Read {len(df)} rows from daily_load.csv")

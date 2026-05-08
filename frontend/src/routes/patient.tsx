@@ -42,6 +42,7 @@ import {
 } from "@/services/patientAgentService";
 import { getAdminPortalUrl, getPortal } from "@/lib/portal";
 import { publishPortalEvent } from "@/lib/portalBus";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/patient")({
   component: PatientPage,
@@ -127,51 +128,68 @@ function PatientPage() {
 
   const currentQuick = QUICK[lang];
 
-  useEffect(() => {
-    if (!recording) return;
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
-    const phrases =
-      lang === "en"
-        ? [
-            "I want",
-            "I want to book",
-            "I want to book an appointment",
-            "I want to book an appointment with cardiology",
-          ]
-        : ["مجھے", "مجھے اپوائنٹمنٹ", "مجھے اپوائنٹمنٹ بُک کرنی ہے"];
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      chunksRef.current = [];
 
-    let i = 0;
-    const t = setInterval(() => {
-      setTranscript(phrases[Math.min(i, phrases.length - 1)]);
-      i++;
-      if (i >= phrases.length + 2) {
-        clearInterval(t);
-        setRecording(false);
-        (async () => {
-          try {
-            setSending(true);
-            const data = await processPatientVoice({
-              userId: "anon",
-              lang,
-              audioDataBase64: "bW9jaw==",
-            });
-            setMsgs((p) => [
-              ...p,
-              { id: `u${Date.now()}`, from: "user", text: data.transcript, time: "now" },
-              { id: `a${Date.now() + 1}`, from: "ai", text: data.responseText, time: "now" },
-            ]);
-          } catch {
-            toast.error(lang === "ur" ? "وائس ناکام ہو گئی" : "Voice processing failed");
-          } finally {
-            setSending(false);
-          }
-        })();
-        setTranscript("");
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+        await handleVoiceSubmit(audioBlob);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      recorder.start();
+      setRecording(true);
+      setTranscript(lang === "en" ? "Listening..." : "سن رہا ہوں...");
+    } catch (err) {
+      toast.error(lang === "ur" ? "مائیکروفون تک رسائی نہیں ہے" : "Microphone access denied");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && recording) {
+      mediaRecorderRef.current.stop();
+      setRecording(false);
+    }
+  };
+
+  const handleVoiceSubmit = async (audioBlob: Blob) => {
+    try {
+      setSending(true);
+      const data = await processPatientVoice({
+        userId: "anon",
+        lang,
+        audioData: audioBlob,
+      });
+
+      setMsgs((p) => [
+        ...p,
+        { id: `u${Date.now()}`, from: "user", text: data.transcript, time: "now" },
+        { id: `a${Date.now() + 1}`, from: "ai", text: data.responseText, time: "now" },
+      ]);
+
+      if (data.audioUrl) {
+        const baseUrl = api.defaults.baseURL?.replace("/api", "") || "";
+        const audio = new Audio(`${baseUrl}${data.audioUrl}`);
+        void audio.play();
       }
-    }, 600);
-
-    return () => clearInterval(t);
-  }, [recording, lang]);
+    } catch {
+      toast.error(lang === "ur" ? "وائس ناکام ہو گئی" : "Voice processing failed");
+    } finally {
+      setSending(false);
+      setTranscript("");
+    }
+  };
 
   useEffect(() => {
     if (!callOpen) {
@@ -250,7 +268,7 @@ function PatientPage() {
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>
               <h1 className="font-display font-bold text-3xl tracking-tight">Chat with MediFlow</h1>
-              <p className="text-muted-foreground">Mock agent chat + mock call/contact options</p>
+              <p className="text-muted-foreground">Smart AI assistant for chat and voice triage</p>
             </div>
             <div className="flex items-center gap-2">
               <div className="flex p-1 rounded-xl bg-muted">
@@ -305,7 +323,7 @@ function PatientPage() {
                   <Bot className="size-5 text-white" />
                 </div>
                 <div>
-                  <div className="font-semibold">MediFlow Agent (Mock)</div>
+                  <div className="font-semibold">MediFlow AI Assistant</div>
                   <div className="text-xs text-success flex items-center gap-1.5">
                     <span className="size-1.5 rounded-full bg-success animate-pulse" />
                     Online
@@ -390,7 +408,7 @@ function PatientPage() {
             <div className="rounded-2xl glass-card p-6 flex flex-col">
               <div className="flex items-center gap-2 mb-1">
                 <Headphones className="size-4 text-violet" />
-                <h3 className="font-display font-bold text-lg">Voice (Mock)</h3>
+                <h3 className="font-display font-bold text-lg">Voice Assistant</h3>
               </div>
               <p className="text-sm text-muted-foreground mb-6">
                 Tap the mic to simulate a call transcript
@@ -409,8 +427,8 @@ function PatientPage() {
                   )}
                   <button
                     onClick={() => {
-                      setRecording((r) => !r);
-                      setTranscript("");
+                      if (recording) stopRecording();
+                      else void startRecording();
                     }}
                     className={`relative size-24 rounded-full grid place-items-center shadow-glow transition-all ${
                       recording ? "bg-destructive text-white" : "gradient-primary text-white"
@@ -426,12 +444,18 @@ function PatientPage() {
 
                 <div className="text-center">
                   <div className="text-sm font-medium">
-                    {recording ? "Listening..." : "Tap to speak"}
+                    {recording
+                      ? lang === "en"
+                        ? "Stop recording"
+                        : "ریکارڈنگ روکیں"
+                      : lang === "en"
+                        ? "Tap to speak"
+                        : "بولنے کے لیے ٹیپ کریں"}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {recording
-                      ? "Streaming to a mock pipeline"
-                      : "Powered by MediFlow Voice (Mock)"}
+                      ? "Streaming to AI pipeline..."
+                      : "Powered by MediFlow Voice"}
                   </div>
                 </div>
 
@@ -477,7 +501,7 @@ function PatientPage() {
             <DialogDescription>
               {lang === "ur"
                 ? "یہ فیچر فی الحال موک ہے۔ بعد میں حقیقی ایجنٹ جوڑا جا سکتا ہے۔"
-                : "This feature is currently mocked and can be wired to a real agent later."}
+                : "I can help you book appointments or answer clinic questions."}
             </DialogDescription>
           </DialogHeader>
 
@@ -518,7 +542,7 @@ function PatientPage() {
             <DialogDescription>
               {lang === "ur"
                 ? "اپنا پیغام درج کریں۔ یہ ایک موک سبمٹ ہے۔"
-                : "Enter your message. This submission is mocked."}
+                : "Type your message here..."}
             </DialogDescription>
           </DialogHeader>
 
