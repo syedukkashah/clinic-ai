@@ -13,3 +13,6 @@ receivers:
     webhook_configs:
       - url: http://backend:8000/api/ops/webhook/prometheus
         send_resolved: false
+        http_config:
+          headers:
+            X-Alertmanager-Token: ""

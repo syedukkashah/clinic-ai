@@ -1,206 +1,179 @@
-# backend/mlops/drift_detector.py
-import numpy as np
+"""
+drift_detector.py — Daily drift detection for MediFlow ML models.
+
+Celery beat calls: mlops.drift_detector.run_daily_drift_check
+
+Compares recent resolved predictions against baseline distributions
+using KL divergence. Triggers retraining when drift exceeds threshold.
+"""
+
+import asyncio
 import logging
 import os
-from pathlib import Path
-from scipy.stats import entropy
-from sqlalchemy import create_engine, text
-from celery import shared_task
+from datetime import datetime, timedelta, timezone
+
+import numpy as np
+from sqlalchemy import select
+
+from db.models import MLPrediction
+from db.session import AsyncSessionLocal
+from tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-DRIFT_THRESHOLD = 0.1
-MIN_SAMPLES = 200
-BASELINE_DIR = Path(__file__).parent / "baselines"
-BASELINE_DIR.mkdir(exist_ok=True)
-
-MODELS = ["wait_time_model", "patient_load_model"]
-
-
-# ── Utility functions ────────────────────────────────────────────
-
-def compute_kl_divergence(p_samples: list, q_samples: list, bins: int = 20) -> float:
-    """KL divergence between two distributions of prediction values."""
-    range_min = min(min(p_samples), min(q_samples))
-    range_max = max(max(p_samples), max(q_samples))
-    bin_range = (range_min, range_max)
-
-    p, _ = np.histogram(p_samples, bins=bins, range=bin_range, density=True)
-    q, _ = np.histogram(q_samples, bins=bins, range=bin_range, density=True)
-
-    # Smooth to avoid log(0)
-    p = p + 1e-10
-    q = q + 1e-10
-
-    return float(entropy(p, q))
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+DRIFT_THRESHOLD = 0.1       # KL divergence threshold to trigger retraining
+MIN_SAMPLES = 200           # Minimum resolved predictions needed to run check
+LOOKBACK_DAYS = 7           # How far back to look for resolved predictions
+MODELS_TO_CHECK = ["wait_time_model", "patient_load_model"]
 
 
-def save_baseline(model_name: str, predictions: list):
-    """Call once to save baseline distribution from synthetic data."""
-    path = BASELINE_DIR / f"baseline_{model_name}.npy"
-    np.save(str(path), np.array(predictions))
-    logger.info(f"Saved baseline for {model_name}: {len(predictions)} samples → {path}")
+# ---------------------------------------------------------------------------
+# Statistical Logic
+# ---------------------------------------------------------------------------
+def _calculate_kl_divergence(p_samples: np.ndarray, q_samples: np.ndarray, bins: int = 20) -> float:
+    """KL(P || Q) where P=baseline, Q=recent."""
+    import scipy.stats
+
+    min_val = min(p_samples.min(), q_samples.min())
+    max_val = max(p_samples.max(), q_samples.max())
+    edges = np.linspace(min_val, max_val, bins + 1)
+
+    p_hist, _ = np.histogram(p_samples, bins=edges, density=True)
+    q_hist, _ = np.histogram(q_samples, bins=edges, density=True)
+
+    epsilon = 1e-10
+    p_hist = p_hist + epsilon
+    q_hist = q_hist + epsilon
+    p_hist = p_hist / p_hist.sum()
+    q_hist = q_hist / q_hist.sum()
+
+    return float(scipy.stats.entropy(p_hist, q_hist))
 
 
-def load_baseline(model_name: str) -> list:
-    path = BASELINE_DIR / f"baseline_{model_name}.npy"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"No baseline found for {model_name}. "
-            f"Run generate_baselines() first."
-        )
-    return np.load(str(path)).tolist()
+# ---------------------------------------------------------------------------
+# Data Fetching (Extracted for Mocking in Tests)
+# ---------------------------------------------------------------------------
+def _load_baseline(model_name: str) -> np.ndarray | None:
+    """Load the baseline prediction distribution saved during training."""
+    candidates = [
+        f"mlops/baselines/{model_name}_baseline.npy",
+        f"../ml_service/mlops/baselines/{model_name}_baseline.npy",
+        f"/ml_service/data/{model_name}_baseline.npy",
+        f"backend/mlops/baselines/{model_name}_baseline.npy",
+    ]
+    if model_name == "wait_time_model":
+        candidates.insert(0, "mlops/baselines/wait_time_baseline_dist.npy")
+
+    for path in candidates:
+        if os.path.exists(path):
+            return np.load(path, allow_pickle=True)
+    return None
 
 
-def get_recent_predictions(model_name: str, hours: int = 24) -> list:
-    """Fetch last N hours of resolved predictions for drift comparison."""
-    from core.config import settings
-    engine = create_engine(settings.DATABASE_URL)
-    with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT predicted_value FROM ml_predictions
-            WHERE model_name = :name
-              AND predicted_at > NOW() - INTERVAL ':hours hours'
-              AND actual_value IS NOT NULL
-        """), {"name": model_name, "hours": hours}).fetchall()
-    return [float(r[0]) for r in rows]
-
-
-def log_drift_result(model_name: str, kl: float | None, status: str, n: int):
-    """Persist drift check result for audit trail / dashboard."""
-    from core.config import settings
-    engine = create_engine(settings.DATABASE_URL)
-    with engine.connect() as conn:
-        conn.execute(text("""
-            INSERT INTO drift_check_logs
-                (model_name, kl_divergence, status, sample_count, checked_at)
-            VALUES (:model, :kl, :status, :n, NOW())
-        """), {"model": model_name, "kl": kl, "status": status, "n": n})
-        conn.commit()
-
-
-# ── Main drift check task ────────────────────────────────────────
-
-@shared_task(name="mlops.drift_detector.run_daily_drift_check")
-def run_daily_drift_check():
-    """
-    Daily task: compares recent predictions to baseline.
-    Triggers retraining if KL divergence > DRIFT_THRESHOLD.
-    """
-    logger.info("Starting daily drift check...")
-
-    for model_name in MODELS:
-        try:
-            recent_preds = get_recent_predictions(model_name, hours=24)
-            n = len(recent_preds)
-
-            if n < MIN_SAMPLES:
-                logger.warning(f"{model_name}: only {n} samples — need {MIN_SAMPLES}. Skipping.")
-                log_drift_result(model_name, kl=None, status="insufficient_data", n=n)
-                continue
-
-            baseline = load_baseline(model_name)
-            kl = compute_kl_divergence(recent_preds, baseline)
-
-            logger.info(f"{model_name}: KL divergence = {kl:.4f} (threshold={DRIFT_THRESHOLD})")
-
-            # Push metric to ML service
-            import httpx
-            import os
-            try:
-                ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://ml_service:8001")
-                with httpx.Client(timeout=10.0) as client:
-                    client.post(f"{ML_SERVICE_URL}/log-drift", json={"model_name": model_name, "kl_divergence": kl})
-            except Exception as e:
-                logger.warning(f"Could not push drift metric to ML service: {e}")
-
-            if kl > DRIFT_THRESHOLD:
-                logger.warning(f"{model_name}: DRIFT DETECTED (KL={kl:.4f}) — triggering retrain")
-                log_drift_result(model_name, kl=kl, status="drift_detected", n=n)
-                trigger_retraining.delay(model_name, reason=f"drift_kl_{kl:.4f}")
-            else:
-                logger.info(f"{model_name}: No drift. All good.")
-                log_drift_result(model_name, kl=kl, status="ok", n=n)
-
-        except FileNotFoundError as e:
-            logger.error(str(e))
-        except Exception as e:
-            logger.error(f"Drift check failed for {model_name}: {e}")
-
-
-@shared_task(name="mlops.drift_detector.trigger_retraining")
-def trigger_retraining(model_name: str, reason: str = "manual"):
-    """Triggers retraining on the ML service, using Redis lock to prevent duplicates."""
-    import httpx
-    import os
-    import redis
-    import json
-    
-    logger.info(f"[RETRAIN TRIGGERED] model={model_name} reason={reason}")
-    
-    ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://ml_service:8001")
-    INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "mediflow-internal-secret")
-    REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
-    
-    # 1. Acquire lock to prevent duplicate retraining runs
-    r = redis.from_url(REDIS_URL)
-    lock_key = f"retrain_lock:{model_name}"
-    # Lock expires in 15 minutes to prevent permanent deadlocks
-    acquired = r.set(lock_key, "1", nx=True, ex=900)
-    
-    if not acquired:
-        logger.info(f"Retraining for {model_name} is already in progress. Skipping.")
-        return
-        
-    try:
-        # 2. Trigger retraining via HTTP
-        with httpx.Client(timeout=300.0) as client:
-            response = client.post(
-                f"{ML_SERVICE_URL}/retrain",
-                headers={"X-Internal-Secret": INTERNAL_SECRET},
-                json={"model_name": model_name, "reason": reason}
+async def _get_recent_predictions(model_name: str) -> np.ndarray:
+    """Fetch resolved predictions from DB for the lookback window."""
+    since = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
+    async with AsyncSessionLocal() as db:
+        stmt = (
+            select(MLPrediction.predicted_value)
+            .where(
+                MLPrediction.model_name == model_name,
+                MLPrediction.actual_value.isnot(None),
+                MLPrediction.predicted_at >= since,
             )
-            
-            if response.status_code == 200:
-                logger.info(f"Retraining successful for {model_name}. Results: {response.json()}")
-            else:
-                logger.error(f"Failed to trigger retraining: {response.status_code} - {response.text}")
+        )
+        result = await db.execute(stmt)
+        rows = result.scalars().all()
+    return np.array(rows, dtype=float)
+
+
+# ---------------------------------------------------------------------------
+# Orchestration
+# ---------------------------------------------------------------------------
+async def _trigger_retraining(model_name: str):
+    """Trigger retraining via Celery task."""
+    try:
+        from tasks.retrain_task import retrain_model
+        retrain_model.delay(model_name=model_name, reason="drift_detected")
+        return True
     except Exception as e:
-        logger.error(f"Error during trigger_retraining for {model_name}: {e}")
-    finally:
-        # 3. Release lock
-        r.delete(lock_key)
+        logger.error(f"Failed to enqueue retraining for {model_name}: {e}")
+        return False
 
 
-# ── One-time baseline generation ─────────────────────────────────
+async def _create_drift_alert(model_name: str, kl_div: float, sample_count: int):
+    """Create ops alert in the database."""
+    try:
+        from db import crud
+        async with AsyncSessionLocal() as db:
+            await crud.create_ops_alert(db, {
+                "severity": "Medium",
+                "title": f"ML Model Drift: {model_name}",
+                "reasoning": f"KL divergence = {kl_div:.4f} exceeds threshold {DRIFT_THRESHOLD}.",
+                "type": "drift",
+                "trace": [f"kl_div={kl_div:.4f}", f"samples={sample_count}"],
+                "recommendedActions": [{"kind": "trigger_retraining", "model": model_name}],
+            })
+            await db.commit()
+    except Exception as e:
+        logger.error(f"Failed to create drift alert for {model_name}: {e}")
 
-def generate_baselines():
-    """
-    Run this ONCE after backfill to create baseline .npy files.
-    Uses the backfilled synthetic predictions as ground truth baseline.
-    """
-    from core.config import settings
-    engine = create_engine(settings.DATABASE_URL)
 
-    for model_name in MODELS:
-        with engine.connect() as conn:
-            rows = conn.execute(text("""
-                SELECT predicted_value FROM ml_predictions
-                WHERE model_name = :name
-                  AND model_version = 'v1_backfill'
-                  AND actual_value IS NOT NULL
-                LIMIT 500
-            """), {"name": model_name}).fetchall()
+async def _check_model_drift(model_name: str) -> dict:
+    baseline = _load_baseline(model_name)
+    if baseline is None:
+        return {"model_name": model_name, "status": "skipped", "reason": "no_baseline_file"}
 
-        preds = [float(r[0]) for r in rows]
+    recent = await _get_recent_predictions(model_name)
+    sample_count = len(recent)
 
-        if not preds:
-            logger.warning(f"No backfilled data for {model_name} — run backfill_predictions.py first")
-            continue
+    if sample_count < MIN_SAMPLES:
+        return {
+            "model_name": model_name,
+            "status": "insufficient_data",
+            "sample_count": sample_count,
+            "action": "none"
+        }
 
-        save_baseline(model_name, preds)
-        print(f"✅ Baseline saved for {model_name} ({len(preds)} samples)")
+    kl_div = _calculate_kl_divergence(baseline, recent)
+    status = "ok"
+    action = "none"
 
+    if kl_div > DRIFT_THRESHOLD:
+        status = "drift_detected"
+        action = "retrain_triggered"
+        await _trigger_retraining(model_name)
+        await _create_drift_alert(model_name, kl_div, sample_count)
+
+    return {
+        "model_name": model_name,
+        "status": status,
+        "kl_divergence": round(kl_div, 6),
+        "sample_count": sample_count,
+        "action": action,
+    }
+
+
+@celery_app.task(name="mlops.drift_detector.run_daily_drift_check")
+def run_daily_drift_check():
+    return asyncio.run(_run_all_drift_checks())
+
+
+async def _run_all_drift_checks() -> list[dict]:
+    results = []
+    for model_name in MODELS_TO_CHECK:
+        try:
+            result = await _check_model_drift(model_name)
+            results.append(result)
+        except Exception as e:
+            logger.exception(f"Drift check failed for {model_name}: {e}")
+            results.append({"model_name": model_name, "status": "error", "reason": str(e)})
+    return results
 
 if __name__ == "__main__":
-    generate_baselines()
+    import json
+    logging.basicConfig(level=logging.INFO)
+    print(json.dumps(asyncio.run(_run_all_drift_checks()), indent=2))

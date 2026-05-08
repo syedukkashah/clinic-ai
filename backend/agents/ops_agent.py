@@ -710,6 +710,8 @@ class OpsMonitorAgent:
                     messages=messages,
                     system=SYSTEM_PROMPT,
                     task_type="ops",
+                    tools=[{"name": t["name"], "description": t["description"],
+                            "parameters": t["parameters"]} for t in TOOL_SCHEMAS],
                 )
 
                 content = llm_resp.text if hasattr(llm_resp, "text") else str(llm_resp)

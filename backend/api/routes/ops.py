@@ -171,7 +171,7 @@ async def list_alerts(
         {
             "id": a.id,
             "message": a.message,
-            "severity": str(a.severity).lower(),
+            "severity": a.severity.value.lower(),
             "channel": a.channel,
             "agent": a.agent,
             "created_at": a.created_at.isoformat(),

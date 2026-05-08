@@ -57,6 +57,7 @@ services:
       - "8001:8001"
     volumes:
       - ./ml_service:/app
+      - mlflow_data:/mlflow
     depends_on:
       - postgres
       - mlflow

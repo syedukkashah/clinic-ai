@@ -31,10 +31,7 @@ mlflow.db
 # =========================
 # 📊 Data (DO NOT TRACK LARGE DATASETS)
 # =========================
-data/
-*.csv
-*.parquet
-*.feather
+
 
 # If you WANT to keep schema files, allow JSON only:
 !data/*.json
@@ -42,12 +39,7 @@ data/
 # =========================
 # 🤖 Model artifacts (optional safety)
 # =========================
-*.pkl
-*.pickle
-*.joblib
-*.h5
-*.pt
-*.onnx
+
 
 # Keep ONLY explicitly needed inference artifacts if required:
 # !data/wait_time_features.json
@@ -160,12 +152,7 @@ frontend/.wrangler/
 
 backend/.env
 ml_service/.env
-ml_service/data/
-ml_service/mlruns/
-ml_service/conftest.py
-ml_service/data/*.csv
-ml_service/data/*.json
-ml_service/data/*.npy
+
 # Python
 __pycache__/
 *.pyc
@@ -177,8 +164,7 @@ __pycache__/
 *.txt
 
 # Data (if not required)
-*.csv
-*.npy
+
 
 # =========================
 # 🗑️ Debug / build artifacts (should never be committed)
