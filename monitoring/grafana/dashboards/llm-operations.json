@@ -1,0 +1,98 @@
+{
+  "title": "MediFlow — LLM Operations",
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "schemaVersion": 38,
+  "panels": [
+    {
+      "title": "LLM calls per second by provider",
+      "type": "timeseries",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (provider)(rate(mediflow_llm_calls_total[5m]))",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "title": "LLM error rate by provider",
+      "type": "table",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (provider)(rate(mediflow_llm_calls_total{status=\"error\"}[5m])) / sum by (provider)(rate(mediflow_llm_calls_total[5m])) * 100",
+          "legendFormat": "{{provider}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "title": "p95 LLM latency by provider",
+      "type": "barchart",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (provider, le)(rate(mediflow_llm_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{provider}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Key pool available per provider",
+      "type": "bargauge",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "mediflow_key_pool_available",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "title": "STT p95 latency",
+      "type": "stat",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (engine, le)(rate(mediflow_stt_latency_seconds_bucket[5m])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    }
+  ]
+}

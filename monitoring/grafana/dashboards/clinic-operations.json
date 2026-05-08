@@ -1,0 +1,90 @@
+{
+  "title": "MediFlow — Clinic Operations",
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "schemaVersion": 38,
+  "panels": [
+    {
+      "title": "Bookings per hour by clinic",
+      "type": "barchart",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (clinic_id)(increase(mediflow_bookings_total[1h]))",
+          "legendFormat": "{{clinic_id}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "title": "Predicted wait time by clinic",
+      "type": "gauge",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "mediflow_predicted_wait_minutes",
+          "legendFormat": "{{clinic_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "minutes",
+          "max": 120
+        }
+      }
+    },
+    {
+      "title": "Reassignments per hour",
+      "type": "stat",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(increase(mediflow_reassignments_total[1h]))"
+        }
+      ]
+    },
+    {
+      "title": "Booking status breakdown",
+      "type": "piechart",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (status)(increase(mediflow_bookings_total[1h]))",
+          "legendFormat": "{{status}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "title": "Notifications sent by channel",
+      "type": "barchart",
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (channel)(rate(mediflow_notifications_sent_total[5m]))",
+          "legendFormat": "{{channel}}",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}

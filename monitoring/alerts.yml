@@ -1,0 +1,32 @@
+groups:
+  - name: mediflow
+    rules:
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[2m])) / sum(rate(http_requests_total[2m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+
+      - alert: LLMKeyPoolExhausted
+        expr: mediflow_key_pool_available < 1
+        for: 1m
+        labels:
+          severity: critical
+
+      - alert: ModelDriftHigh
+        expr: mediflow_model_drift_score > 0.3
+        for: 5m
+        labels:
+          severity: warning
+
+      - alert: HighLLMLatency
+        expr: histogram_quantile(0.95, sum by(le) (rate(mediflow_llm_latency_seconds_bucket[3m]))) > 5
+        for: 3m
+        labels:
+          severity: warning
+
+      - alert: AnomalyScoreHigh
+        expr: mediflow_anomaly_score > 0.8
+        for: 5m
+        labels:
+          severity: critical
