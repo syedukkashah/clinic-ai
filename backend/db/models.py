@@ -148,7 +148,9 @@ class OpsAlert(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     message = Column(String, nullable=False)
-    severity = Column(String(20), default="warning")
+    severity = Column(String(20), default="WARNING")
+    channel = Column(String(50), nullable=False, default="admin")
+    agent = Column(String(50), nullable=False, default="ops_monitor")
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
@@ -193,3 +195,9 @@ class DailyLoad(Base):
     )
 
     doctor = relationship("Doctor", back_populates="daily_load_records")
+
+
+class OpsAlertSeverity(enum.Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"

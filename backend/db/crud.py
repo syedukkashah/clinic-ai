@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Date, func, select, cast, case, delete as sa_delete, update as sa_update
+from sqlalchemy import Date, func, select, cast, case, text, delete as sa_delete, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -533,27 +533,16 @@ async def check_db(db: AsyncSession) -> Dict[str, Any]:
 #  OPS ALERTS & ACTIVITY
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def get_ops_alerts(db: AsyncSession) -> List[Dict[str, Any]]:
-    """Fetch unacknowledged ops alerts."""
-    stmt = select(OpsAlert).order_by(OpsAlert.created_at.desc())
-    result = await db.execute(stmt)
-    alerts = result.scalars().all()
-    out = []
-    for alert in alerts:
-        details = alert.details or {}
-        if not details.get("acknowledged", False):
-            out.append({
-                "id": f"alt-{alert.id}",
-                "severity": alert.severity,
-                "title": alert.message,
-                "reasoning": details.get("reasoning", ""),
-                "timestamp": alert.created_at.isoformat(),
-                "type": details.get("type", "surge"),
-                "trace": details.get("trace", []),
-                "recommendedActions": details.get("recommendedActions", []),
-                "acknowledged": details.get("acknowledged", False),
-            })
-    return out
+async def get_ops_alerts(
+        db: AsyncSession,
+        limit: int = 50,
+        severity: Optional[str] = None,
+    ) -> List[OpsAlert]:
+        stmt = select(OpsAlert).order_by(OpsAlert.created_at.desc()).limit(limit)
+        if severity:
+            stmt = stmt.where(OpsAlert.severity == severity.upper())
+        result = await db.execute(stmt)
+        return result.scalars().all()
 
 
 async def create_ops_alert(db: AsyncSession, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -669,3 +658,116 @@ async def get_dynamic_metrics(db: AsyncSession) -> Dict[str, Any]:
         "waitModelDriftKl": 0.06, # Mocked
         "keyPoolAvailable": {"gemini": 11, "groq": 18, "together": 7, "openrouter": 4},
     }
+
+async def get_booking_counts_bucketed(
+    db: AsyncSession, since: datetime, bucket_minutes: int = 5
+) -> List:
+    result = await db.execute(
+        text("""
+            SELECT date_trunc('hour', created_at) +
+                   INTERVAL '1 minute' * :bucket * FLOOR(
+                       EXTRACT(MINUTE FROM created_at) / :bucket
+                   ) AS bucket,
+                   COUNT(*) AS count
+            FROM appointments
+            WHERE created_at >= :since
+            GROUP BY bucket
+            ORDER BY bucket
+        """),
+        {"since": since, "bucket": bucket_minutes}
+    )
+    return result.fetchall()
+
+
+async def create_slots_for_doctor(
+    db: AsyncSession, doctor_id: int, date: datetime,
+    specialty: str, count: int
+) -> List[Slot]:
+    slots = []
+    for i in range(count):
+        slot = Slot(
+            doctor_id=doctor_id,
+            specialty=specialty,
+            start_time=date,
+            is_available=True
+        )
+        db.add(slot)
+        slots.append(slot)
+    await db.commit()
+    return slots
+
+
+async def get_recent_predictions(
+    db: AsyncSession, model_name: str,
+    since: datetime, resolved_only: bool = True
+) -> List[MLPrediction]:
+    query = select(MLPrediction).where(
+        MLPrediction.model_name == model_name,
+        MLPrediction.predicted_at >= since
+    )
+    if resolved_only:
+        query = query.where(MLPrediction.actual_value.isnot(None))
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def get_baseline_distribution(
+    db: AsyncSession, model_name: str
+) -> Optional[List[float]]:
+    result = await db.execute(
+        select(MLPrediction.predicted_value).where(
+            MLPrediction.model_name == model_name,
+            MLPrediction.actual_value.isnot(None)
+        ).limit(1000)
+    )
+    rows = result.scalars().all()
+    return [float(r) for r in rows] if rows else None
+
+
+async def count_appointments_since(
+    db: AsyncSession, since: datetime
+) -> int:
+    result = await db.execute(
+        select(func.count()).where(Appointment.created_at >= since)
+    )
+    return result.scalar() or 0
+
+
+async def count_cancellations_since(
+    db: AsyncSession, since: datetime
+) -> int:
+    result = await db.execute(
+        select(func.count()).where(
+            Appointment.created_at >= since,
+            Appointment.status == "CANCELLED"
+        )
+    )
+    return result.scalar() or 0
+
+
+async def get_avg_predicted_wait(
+    db: AsyncSession, since: datetime
+) -> Optional[float]:
+    result = await db.execute(
+        select(func.avg(MLPrediction.predicted_value)).where(
+            MLPrediction.model_name == "wait_time_model",
+            MLPrediction.predicted_at >= since
+        )
+    )
+    return result.scalar()
+
+
+async def create_notification(
+    db: AsyncSession, recipient_id: int, recipient_type: str,
+    message: str, lang: str = "en"
+) -> Notification:
+    notif = Notification(
+        recipient_id=recipient_id,
+        recipient_type=recipient_type,
+        message=message,
+        lang=lang
+    )
+    db.add(notif)
+    await db.commit()
+    await db.refresh(notif)
+    return notif
