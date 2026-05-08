@@ -161,7 +161,7 @@ def evaluate(pipeline, X_train, y_train, X_val, y_val):
 
 # ── Training ───────────────────────────────────────────────────────────────────
 
-def train() -> None:
+def train_wait_time_model(reason: str = "scheduled") -> dict:
     logger.info("Loading data...")
     df = pd.read_csv(CSV_PATH)
     df = df[df["showed_up"] == True].dropna(subset=[TARGET]).copy()
@@ -273,7 +273,7 @@ def train() -> None:
 
     if not results:
         logger.info("No models trained.")
-        return
+        return {"rmse": float("inf"), "promoted": False, "run_id": None, "reason": reason}
 
     # ── Champion / challenger ─────────────────────────────────────────────────
     best_key = min(results, key=lambda k: results[k]["val_rmse"])
@@ -306,7 +306,15 @@ def train() -> None:
     logger.info("    Pipeline (pre+model)         → MLflow registry (Production)")
     logger.info("")
     logger.info("  Done.")
+    
+    return {
+        "rmse": best["val_rmse"],
+        "promoted": best["val_rmse"] < prod_rmse,
+        "run_id": mlflow.active_run().info.run_id if mlflow.active_run() else None,
+        "reason": reason
+    }
 
 
 if __name__ == "__main__":
-    train()
+    result = train_wait_time_model()
+    print(result)

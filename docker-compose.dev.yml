@@ -31,6 +31,7 @@ services:
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
     ports:
       - "8000:8000"
     volumes:
@@ -40,6 +41,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - mlflow
 
   ml_service:
     build:
@@ -47,12 +49,26 @@ services:
       dockerfile: Dockerfile
     environment:
       - DATABASE_URL=postgresql+asyncpg://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
     ports:
       - "8001:8001"
     volumes:
       - ./ml_service:/app
     depends_on:
       - postgres
+      - mlflow
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.2
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+    volumes:
+      - mlflow_data:/mlflow
 
   frontend_admin:
     build:
@@ -103,3 +119,4 @@ volumes:
   postgres_data:
   grafana_data:
   chroma_data:
+  mlflow_data:

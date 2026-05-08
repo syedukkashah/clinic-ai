@@ -57,6 +57,24 @@ PROM_LOAD_PRED = Gauge(
     ["doctor_id", "hour"]
 )
 
+PROM_MODEL_RETRAINS = Counter(
+    "mediflow_model_retrains_total",
+    "Number of retraining runs",
+    ["model", "reason", "status"]
+)
+
+PROM_MODEL_PROMOTIONS = Counter(
+    "mediflow_model_promotions_total",
+    "Number of model promotions to Production",
+    ["model"]
+)
+
+PROM_DRIFT_KL = Gauge(
+    "mediflow_model_drift_kl",
+    "KL Divergence drift score for model",
+    ["model"]
+)
+
 # ---------------------------------------------------------------------------
 # Module-level model state
 # ---------------------------------------------------------------------------
@@ -129,6 +147,13 @@ class LoadForecastResponse(BaseModel):
     peak_hour: int
     peak_hour_patients: int
 
+class RetrainRequest(BaseModel):
+    model_name: str = "all"
+    reason: str = "scheduled"
+
+class DriftLogRequest(BaseModel):
+    model_name: str
+    kl_divergence: float
 
 # ---------------------------------------------------------------------------
 # Application lifespan — load models at startup
@@ -355,22 +380,39 @@ async def reload_models(
 
     return ReloadResponse(reloaded=["wait_time_model", "patient_load_model"], status="ok")
 
+@app.post("/log-drift")
+async def log_drift(request: DriftLogRequest):
+    """Log drift metrics to Prometheus."""
+    PROM_DRIFT_KL.labels(model=request.model_name).set(request.kl_divergence)
+    return {"status": "ok"}
 
 @app.post("/retrain")
 async def retrain_models(
+    request: RetrainRequest,
     x_internal_secret: Optional[str] = Header(None),
 ):
     """Trigger retraining of models."""
     if INTERNAL_SECRET and x_internal_secret != INTERNAL_SECRET:
         raise HTTPException(status_code=401, detail="Invalid or missing secret")
 
-    from training.retrain_all import retrain_all_models
+    from training.retrain_all import retrain_models as do_retrain
     import asyncio
     
+    logger.info(f"Retraining triggered for {request.model_name} (reason: {request.reason})")
+    
     # Run retraining in a background thread or process to not block FastAPI
-    # For now, we'll just call it directly since it's a small dataset in this demo
-    # In production, this would be a separate Celery task in the ML container
-    results = retrain_all_models()
+    results = do_retrain(model_name=request.model_name, reason=request.reason)
+    
+    # Log prometheus metrics
+    for model_key, res in results.items():
+        if model_key == "timestamp":
+            continue
+            
+        status = "ok" if res.get("run_id") else "error"
+        PROM_MODEL_RETRAINS.labels(model=model_key, reason=request.reason, status=status).inc()
+        
+        if res.get("promoted"):
+            PROM_MODEL_PROMOTIONS.labels(model=model_key).inc()
     
     # Reload models after retraining
     await reload_models(x_internal_secret=x_internal_secret)

@@ -3,9 +3,15 @@ from celery.schedules import crontab
 timezone = "UTC"
 
 beat_schedule = {
-    "weekly-retraining": {
+    "weekly-retrain-wait-time": {
         "task": "tasks.retrain_task.run_weekly_retraining",
         "schedule": crontab(day_of_week="sun", hour=2, minute=0),
+        "kwargs": {"model_name": "wait_time_model"}
+    },
+    "weekly-retrain-patient-load": {
+        "task": "tasks.retrain_task.run_weekly_retraining",
+        "schedule": crontab(day_of_week="sun", hour=3, minute=0),
+        "kwargs": {"model_name": "patient_load_model"}
     },
     "check-schedule-every-30-min": {
         "task": "tasks.check_schedule_and_reassign",

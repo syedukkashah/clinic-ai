@@ -104,6 +104,16 @@ def run_daily_drift_check():
 
             logger.info(f"{model_name}: KL divergence = {kl:.4f} (threshold={DRIFT_THRESHOLD})")
 
+            # Push metric to ML service
+            import httpx
+            import os
+            try:
+                ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://ml_service:8001")
+                with httpx.Client(timeout=10.0) as client:
+                    client.post(f"{ML_SERVICE_URL}/log-drift", json={"model_name": model_name, "kl_divergence": kl})
+            except Exception as e:
+                logger.warning(f"Could not push drift metric to ML service: {e}")
+
             if kl > DRIFT_THRESHOLD:
                 logger.warning(f"{model_name}: DRIFT DETECTED (KL={kl:.4f}) — triggering retrain")
                 log_drift_result(model_name, kl=kl, status="drift_detected", n=n)
@@ -120,11 +130,46 @@ def run_daily_drift_check():
 
 @shared_task(name="mlops.drift_detector.trigger_retraining")
 def trigger_retraining(model_name: str, reason: str = "manual"):
-    """Stub for now — wire to your actual retrain task when MLflow is ready."""
+    """Triggers retraining on the ML service, using Redis lock to prevent duplicates."""
+    import httpx
+    import os
+    import redis
+    import json
+    
     logger.info(f"[RETRAIN TRIGGERED] model={model_name} reason={reason}")
-    # TODO: call your MLflow retrain task here once MLflow server is up
-    # from tasks.retrain import retrain_model
-    # retrain_model.delay(model_name)
+    
+    ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://ml_service:8001")
+    INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "mediflow-internal-secret")
+    REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+    
+    # 1. Acquire lock to prevent duplicate retraining runs
+    r = redis.from_url(REDIS_URL)
+    lock_key = f"retrain_lock:{model_name}"
+    # Lock expires in 15 minutes to prevent permanent deadlocks
+    acquired = r.set(lock_key, "1", nx=True, ex=900)
+    
+    if not acquired:
+        logger.info(f"Retraining for {model_name} is already in progress. Skipping.")
+        return
+        
+    try:
+        # 2. Trigger retraining via HTTP
+        with httpx.Client(timeout=300.0) as client:
+            response = client.post(
+                f"{ML_SERVICE_URL}/retrain",
+                headers={"X-Internal-Secret": INTERNAL_SECRET},
+                json={"model_name": model_name, "reason": reason}
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Retraining successful for {model_name}. Results: {response.json()}")
+            else:
+                logger.error(f"Failed to trigger retraining: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"Error during trigger_retraining for {model_name}: {e}")
+    finally:
+        # 3. Release lock
+        r.delete(lock_key)
 
 
 # ── One-time baseline generation ─────────────────────────────────
