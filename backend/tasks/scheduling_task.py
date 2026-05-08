@@ -1,12 +1,12 @@
 import asyncio
-from tasks.celery_app import celery_app
+from celery import shared_task
 from db.session import SessionLocal
 from services.scheduling_agent import run_proactive_scheduling
 from core.logging import get_logger
 
 logger = get_logger(__name__)
 
-@celery_app.task(name="tasks.check_schedule_and_reassign")
+@shared_task(name="tasks.scheduling_task.check_schedule_and_reassign")
 def check_schedule_and_reassign():
     """
     Celery task to run the proactive scheduling agent.
@@ -21,14 +21,3 @@ def check_schedule_and_reassign():
         logger.error(f"An error occurred during the scheduling task: {e}", exc_info=True)
     finally:
         db.close()
-
-@celery_app.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
-    """
-    Sets up the periodic task to run every 30 minutes.
-    """
-    sender.add_periodic_task(
-        1800.0,  # 30 minutes in seconds
-        check_schedule_and_reassign.s(),
-        name='check schedule every 30 minutes'
-    )

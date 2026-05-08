@@ -2,13 +2,13 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import select
+from celery import shared_task
 from db.session import AsyncSessionLocal
 from db.models import MLPrediction, Appointment, AppointmentStatus
-from tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-@celery_app.task(name="tasks.resolve_predictions.resolve_completed_appointments")
+@shared_task(name="tasks.resolve_predictions.resolve_completed_appointments")
 def resolve_completed_appointments():
     """
     Hourly task: fills actual_value in ml_predictions for completed appointments.

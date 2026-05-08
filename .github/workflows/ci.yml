@@ -459,6 +459,7 @@ jobs:
         run: |
           python - <<'EOF'
           from tasks.celery_app import celery_app
+          celery_app.finalize()
           registered = list(celery_app.tasks.keys())
           print("Registered tasks:", registered)
           required = [
@@ -541,7 +542,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r ml_service/requirements.txt
-          pip install pytest pytest-asyncio pytest-cov
+          pip install pytest pytest-asyncio pytest-cov setuptools
 
       - name: Run ML Service MLOps Tests
         env:
@@ -552,7 +553,7 @@ jobs:
       - name: Install Backend MLOps Dependencies
         run: |
           pip install -r backend/requirements.txt -r backend/requirements-dev.txt
-          pip install respx aiosqlite
+          pip install respx aiosqlite setuptools
 
       - name: Run Backend MLOps Tests
         env:

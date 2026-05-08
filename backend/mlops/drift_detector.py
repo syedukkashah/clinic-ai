@@ -15,9 +15,9 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 from sqlalchemy import select
 
+from celery import shared_task
 from db.models import MLPrediction
 from db.session import AsyncSessionLocal
-from tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ async def _check_model_drift(model_name: str) -> dict:
     }
 
 
-@celery_app.task(name="mlops.drift_detector.run_daily_drift_check")
+@shared_task(name="mlops.drift_detector.run_daily_drift_check")
 def run_daily_drift_check():
     return asyncio.run(_run_all_drift_checks())
 

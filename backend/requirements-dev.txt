@@ -44,3 +44,5 @@ pre-commit==3.7.1                  # installs git hooks — run `pre-commit inst
 mypy==1.10.1
 types-redis==4.6.0.20240425
 types-python-jose==3.3.4.20240106
+respx==0.21.1
+setuptools>=69.0.0

@@ -7,12 +7,11 @@ from sqlalchemy import select, func
 from db.session import AsyncSessionLocal
 from db.models import MLPrediction, OpsAlert
 from db import crud
-from tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(name="ops.run_scheduled_check", bind=True, max_retries=2)
+@shared_task(name="tasks.ops_task.run_scheduled_check", bind=True, max_retries=2)
 def run_scheduled_ops_check(self):
     from db.session import async_session_factory
     from agents.orchestrator import orchestrator
@@ -29,7 +28,7 @@ def run_scheduled_ops_check(self):
     return asyncio.run(_run())
 
 
-@celery_app.task(name="tasks.ops_task.run_daily_drift_checks")
+@shared_task(name="tasks.ops_task.run_daily_drift_checks")
 def run_daily_drift_checks_task():
     asyncio.run(run_daily_drift_checks())
 

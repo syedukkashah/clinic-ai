@@ -3,7 +3,6 @@ import logging
 import os
 import httpx
 from celery import shared_task
-from tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ def retrain_model(self, model_name: str, reason: str):
         logger.error("Retrain failed for %s: %s", model_name, exc)
         raise self.retry(exc=exc, countdown=300)
 
-@celery_app.task(name="tasks.retrain_task.run_weekly_retraining")
+@shared_task(name="tasks.retrain_task.run_weekly_retraining")
 def run_weekly_retraining_task(model_name: str = "all"):
     """Periodically called by Celery Beat to refresh models."""
     asyncio.run(run_weekly_retraining(model_name=model_name))
