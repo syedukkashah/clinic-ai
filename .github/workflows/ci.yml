@@ -459,6 +459,11 @@ jobs:
         run: |
           python - <<'EOF'
           from tasks.celery_app import celery_app
+          import tasks.ops_task
+          import tasks.retrain_task
+          import tasks.scheduling_task
+          import tasks.resolve_predictions
+          import mlops.drift_detector
           celery_app.finalize()
           registered = list(celery_app.tasks.keys())
           print("Registered tasks:", registered)
@@ -538,11 +543,14 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Install setuptools
+        run: pip install "setuptools<70"
+
       - name: Install ML Service Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r ml_service/requirements.txt
-          pip install pytest pytest-asyncio pytest-cov setuptools
+          pip install pytest pytest-asyncio pytest-cov
 
       - name: Run ML Service MLOps Tests
         env:
