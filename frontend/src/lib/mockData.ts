@@ -446,7 +446,7 @@ function seedBookedSlots(
 }
 
 function computeDoctorStats(doctors: Doctor[], appointments: Appointment[]): Doctor[] {
-  const byDoc = new Map<string, number>();
+  const byDoc = new Map<number, number>();
   for (const a of appointments) {
     if (a.status !== "Cancelled") {
       byDoc.set(a.doctorId, (byDoc.get(a.doctorId) ?? 0) + 1);
@@ -972,7 +972,7 @@ export function runSchedulingAgent(params: { windowHoursAhead: number }) {
     const appts = s.appointments.filter(
       (a) => a.status !== "Cancelled" && a.status !== "Completed",
     );
-    const byDoc = new Map<string, Appointment[]>();
+    const byDoc = new Map<number, Appointment[]>();
     for (const a of appts) {
       const list = byDoc.get(a.doctorId) ?? [];
       list.push(a);

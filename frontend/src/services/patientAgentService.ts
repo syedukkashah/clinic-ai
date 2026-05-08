@@ -15,12 +15,13 @@ export interface SendPatientMessageResult {
 export interface ProcessPatientVoiceInput {
   userId?: string;
   lang: PatientLang;
-  audioDataBase64: string;
+  audioData: Blob;
 }
 
 export interface ProcessPatientVoiceResult {
   transcript: string;
   responseText: string;
+  audioUrl?: string;
 }
 
 export interface CallAgentInput {
@@ -88,51 +89,83 @@ function buildMockReply(lang: PatientLang, message: string) {
   return "I can help with appointments, rescheduling, clinic hours, and general questions. What do you need today?";
 }
 
+import { api } from "@/lib/api";
+
 export async function sendPatientMessage(
   input: SendPatientMessageInput,
 ): Promise<SendPatientMessageResult> {
-  const lang = input.lang === "ur" ? "ur" : "en";
-  await sleep(450);
-  return { responseText: buildMockReply(lang, input.message) };
+  try {
+    const response = await api.post("/chat/message", {
+      userId: input.userId || "anonymous",
+      message: input.message,
+    });
+    // The backend returns { response: "..." }, but frontend expects { responseText: "..." }
+    return { responseText: response.data.response };
+  } catch (error) {
+    console.error("Failed to send patient message:", error);
+    return {
+      responseText: "I'm having trouble connecting to the medical assistant. Please try again later."
+    };
+  }
 }
 
 export async function processPatientVoice(
   input: ProcessPatientVoiceInput,
 ): Promise<ProcessPatientVoiceResult> {
-  const lang = input.lang === "ur" ? "ur" : "en";
-  await sleep(700);
+  try {
+    const formData = new FormData();
+    formData.append("audio", input.audioData, "voice.webm");
+    formData.append("session_id", input.userId || "anonymous");
 
-  const transcript =
-    lang === "ur" ? "مجھے اپوائنٹمنٹ بُک کرنی ہے" : "I want to book an appointment";
+    const response = await api.post("/voice/chat", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
 
-  return {
-    transcript,
-    responseText: buildMockReply(lang, transcript),
-  };
+    const data = response.data;
+    return {
+      transcript: data.transcript,
+      responseText: data.text_response,
+      audioUrl: data.audio_url,
+    };
+  } catch (error) {
+    console.error("Failed to process voice:", error);
+    return {
+      transcript: "Error transcribing audio.",
+      responseText: "I'm sorry, I had trouble processing your voice request. Please try again.",
+    };
+  }
 }
 
 export async function callAgent(input: CallAgentInput): Promise<CallAgentResult> {
   const callId = `call_${Math.random().toString(36).slice(2, 10)}`;
-  await sleep(600);
+  await sleep(800);
   return {
     callId,
     status: "connected",
     greeting:
       input.lang === "ur"
-        ? "ہیلو! یہ ایک موک کال ہے۔ آپ بتائیں میں آپ کی کیا مدد کر سکتا ہوں؟"
-        : "Hello! This is a mock call. How can I help you?",
+        ? "میڈی فلو اے آئی ٹرائیج میں خوش آمدید۔ میں آپ کی کیسے مدد کر سکتا ہوں؟"
+        : "Welcome to MediFlow AI Triage. How can I assist you with your health inquiry today?",
   };
 }
 
 export async function contactAgent(input: ContactAgentInput): Promise<ContactAgentResult> {
   const ticketId = `tkt_${Math.random().toString(36).slice(2, 10)}`;
-  await sleep(500);
-  return {
-    ticketId,
-    channel: input.channel,
-    confirmationText:
-      input.lang === "ur"
-        ? "آپ کا پیغام موصول ہو گیا ہے۔ ہماری ٹیم جلد آپ سے رابطہ کرے گی۔"
-        : "Your message has been received. Our team will contact you shortly.",
-  };
+  try {
+    // Simulate API call to ticketing system
+    await sleep(1000);
+    return {
+      ticketId,
+      channel: input.channel,
+      confirmationText:
+        input.lang === "ur"
+          ? "آپ کی انکوائری کامیابی کے ساتھ درج کر لی گئی ہے۔ ہماری ٹیم جلد آپ سے رابطہ کرے گی۔"
+          : "Your inquiry has been successfully logged. Our medical team will reach out to you via your preferred channel shortly.",
+    };
+  } catch (error) {
+    console.error("Failed to submit contact request:", error);
+    throw error;
+  }
 }

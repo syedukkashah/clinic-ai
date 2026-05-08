@@ -22,8 +22,16 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def get_url():
-    password = os.environ["POSTGRES_PASSWORD"]
-    return f"postgresql://mediflow:{password}@localhost:5432/mediflow"
+    # Priority 1: Use the full DATABASE_URL if available (set in docker-compose)
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        # Alembic/SQLAlchemy can handle the +psycopg2 part, but if not we can strip it
+        return url.replace("postgresql+psycopg2://", "postgresql://")
+    
+    # Priority 2: Build it from components (fallback for local runs)
+    password = os.environ.get("POSTGRES_PASSWORD", "mediflow")
+    host = os.environ.get("POSTGRES_HOST", "postgres") # 'postgres' is the service name in docker-compose
+    return f"postgresql://mediflow:{password}@{host}:5432/mediflow"
 
 def run_migrations_offline() -> None:
     url = get_url()

@@ -7,11 +7,14 @@ the Pydantic response schemas exactly.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Date, func, select, cast, case, delete as sa_delete, update as sa_update
+from sqlalchemy import Date, func, select, cast, case, text, delete as sa_delete, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -188,8 +191,24 @@ async def get_appointments(
     doctor_id: Optional[int] = None,
     status: Optional[str] = None,
     target_date: Optional[date] = None,
-) -> List[Dict[str, Any]]:
-    """Return appointments with patient and doctor names joined."""
+    search: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return appointments with patient and doctor names joined + total count."""
+    # 1. Total count
+    count_stmt = select(func.count(Appointment.id)).join(Patient, Appointment.patient_id == Patient.id)
+    if doctor_id is not None:
+        count_stmt = count_stmt.where(Appointment.doctor_id == doctor_id)
+    if status is not None:
+        count_stmt = count_stmt.where(Appointment.status == status)
+    if target_date is not None:
+        count_stmt = count_stmt.where(Appointment.date == target_date)
+    if search:
+        count_stmt = count_stmt.where(Patient.name.ilike(f"%{search}%"))
+    
+    count_result = await db.execute(count_stmt)
+    total = count_result.scalar() or 0
+
+    # 2. Results
     stmt = (
         select(Appointment, Patient.name, Doctor.name)
         .join(Patient, Appointment.patient_id == Patient.id)
@@ -203,12 +222,22 @@ async def get_appointments(
         stmt = stmt.where(Appointment.status == status)
     if target_date is not None:
         stmt = stmt.where(Appointment.date == target_date)
+    if search:
+        stmt = stmt.where(Patient.name.ilike(f"%{search}%"))
 
     stmt = stmt.limit(limit).offset(offset)
+    logger.info("Executing appointments query: %s", stmt)
     result = await db.execute(stmt)
     rows = result.all()
 
-    return [_appointment_to_dict(appt, pname, dname) for appt, pname, dname in rows]
+    items = [_appointment_to_dict(appt, pname, dname) for appt, pname, dname in rows]
+    
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 
 async def get_appointment_by_id(db: AsyncSession, appointment_id: str) -> Optional[Dict[str, Any]]:
@@ -499,17 +528,136 @@ async def check_db(db: AsyncSession) -> Dict[str, Any]:
 
     return {"status": "connected", "tables": counts}
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
-#  OPS MONITORING AGENT ALERTS
+#  OPS ALERTS & ACTIVITY
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from datetime import datetime
-from typing import Optional, List
-from sqlalchemy import func, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from db.models import OpsAlert, Appointment, Slot, Notification, MLPrediction
+async def get_ops_alerts(
+        db: AsyncSession,
+        limit: int = 50,
+        severity: Optional[str] = None,
+    ) -> List[OpsAlert]:
+        stmt = select(OpsAlert).order_by(OpsAlert.created_at.desc()).limit(limit)
+        if severity:
+            stmt = stmt.where(OpsAlert.severity == severity.upper())
+        result = await db.execute(stmt)
+        return result.scalars().all()
 
+
+async def create_ops_alert(db: AsyncSession, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a new ops alert."""
+    details = {
+        "reasoning": data.get("reasoning", ""),
+        "type": data.get("type", "surge"),
+        "trace": data.get("trace", []),
+        "recommendedActions": data.get("recommendedActions", []),
+        "acknowledged": False,
+    }
+    alert = OpsAlert(
+        message=data.get("title", "Alert"),
+        severity=data.get("severity", "High"),
+        details=details,
+    )
+    db.add(alert)
+    await db.flush()
+    return {
+        "id": f"alt-{alert.id}",
+        "severity": alert.severity,
+        "title": alert.message,
+        "reasoning": details["reasoning"],
+        "timestamp": alert.created_at.isoformat() if alert.created_at else "just now",
+        "type": details["type"],
+        "trace": details["trace"],
+        "recommendedActions": details["recommendedActions"],
+        "acknowledged": details["acknowledged"],
+    }
+
+
+async def acknowledge_ops_alert(db: AsyncSession, alert_id: str) -> bool:
+    """Acknowledge an ops alert."""
+    try:
+        db_id = int(alert_id.replace("alt-", ""))
+    except ValueError:
+        return False
+
+    stmt = select(OpsAlert).where(OpsAlert.id == db_id)
+    result = await db.execute(stmt)
+    alert = result.scalar_one_or_none()
+    if not alert:
+        return False
+
+    details = dict(alert.details or {})
+    details["acknowledged"] = True
+    alert.details = details
+    await db.flush()
+    return True
+
+
+async def get_activity_feed(db: AsyncSession) -> List[Dict[str, Any]]:
+    """Generate activity feed from recent appointments and alerts."""
+    import time
+    
+    # Fetch recent appointments
+    appt_stmt = (
+        select(Appointment, Patient.name, Doctor.name)
+        .join(Patient, Appointment.patient_id == Patient.id)
+        .join(Doctor, Appointment.doctor_id == Doctor.id)
+        .order_by(Appointment.created_at.desc())
+        .limit(10)
+    )
+    appt_result = await db.execute(appt_stmt)
+    appts = appt_result.all()
+
+    activities = []
+    for appt, pname, dname in appts:
+        timestamp_ms = int(appt.created_at.timestamp() * 1000) if appt.created_at else int(time.time() * 1000)
+        
+        if appt.status == AppointmentStatus.CANCELLED:
+            act_type = "cancel"
+            text = f"Cancellation — {pname} (Dr. {dname})"
+        elif appt.booking_channel == BookingChannel.CHAT:
+            act_type = "ai"
+            text = f"AI agent confirmed appointment for {pname}"
+        elif appt.booking_channel in [BookingChannel.VOICE_NOTE, BookingChannel.WEBRTC_CALL, BookingChannel.TWILIO_CALL]:
+            act_type = "voice"
+            text = f"Voice booking completed — {pname}"
+        else:
+            act_type = "booking"
+            text = f"New booking — {pname} with Dr. {dname}"
+            
+        activities.append({
+            "id": f"act-appt-{appt.id}",
+            "type": act_type,
+            "text": text,
+            "time": "recent",
+            "at": timestamp_ms
+        })
+        
+    activities.sort(key=lambda x: x["at"], reverse=True)
+    return activities[:10]
+
+
+async def get_dynamic_metrics(db: AsyncSession) -> Dict[str, Any]:
+    """Calculate real-time operational metrics."""
+    import time
+    from datetime import timedelta
+    
+    thirty_mins_ago = datetime.now(timezone.utc) - timedelta(minutes=30)
+    
+    # Count bookings in last 30m
+    count_stmt = select(func.count(Appointment.id)).where(Appointment.created_at >= thirty_mins_ago)
+    count_result = await db.execute(count_stmt)
+    booking_volume = count_result.scalar() or 0
+
+    return {
+        "bookingVolume30m": booking_volume,
+        "p95LatencyMs": 1200, # Mocked
+        "apiErrorRatePct": 1.6, # Mocked
+        "anomalyScore": 0.32, # Mocked
+        "waitModelDriftKl": 0.06, # Mocked
+        "keyPoolAvailable": {"gemini": 11, "groq": 18, "together": 7, "openrouter": 4},
+    }
 
 async def get_booking_counts_bucketed(
     db: AsyncSession, since: datetime, bucket_minutes: int = 5
@@ -529,31 +677,6 @@ async def get_booking_counts_bucketed(
         {"since": since, "bucket": bucket_minutes}
     )
     return result.fetchall()
-
-
-async def create_ops_alert(
-    db: AsyncSession, message: str, severity: str,
-    channel: str = "admin", agent: str = "ops_monitor"
-) -> OpsAlert:
-    alert = OpsAlert(
-        message=message, severity=severity,
-        channel=channel, agent=agent
-    )
-    db.add(alert)
-    await db.commit()
-    await db.refresh(alert)
-    return alert
-
-
-async def get_ops_alerts(
-    db: AsyncSession, limit: int = 50,
-    severity: Optional[str] = None
-) -> List[OpsAlert]:
-    query = select(OpsAlert).order_by(OpsAlert.created_at.desc()).limit(limit)
-    if severity:
-        query = query.where(OpsAlert.severity == severity)
-    result = await db.execute(query)
-    return result.scalars().all()
 
 
 async def create_slots_for_doctor(

@@ -91,7 +91,7 @@ class LLM_Router:
         self._keys = {
             "groq": self._load_keys(settings.GROQ_API_KEYS),
             "gemini": self._load_keys(settings.GEMINI_API_KEYS),
-            "mistral": self._load_keys(settings.MISTRAL_API_KEYS),
+            "mistral": self._load_keys(settings.MISTRAL_API_KEYS) + self._load_keys(settings.TOGETHER_API_KEYS),
         }
         self._key_iterators = {
             provider: cycle(keys) for provider, keys in self._keys.items()
@@ -196,7 +196,7 @@ class LLM_Router:
         
         chat_completion = await client.chat.completions.create(
             messages=messages,
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -204,23 +204,34 @@ class LLM_Router:
         return LLMResponse(
             text=text_response,
             provider="groq",
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             raw=chat_completion.to_dict()
         )
 
     async def _call_gemini(self, api_key: str, messages: List[Dict[str, str]], system: Optional[str], temperature: float, max_tokens: int, model_override: Optional[str] = None) -> LLMResponse:
         genai.configure(api_key=api_key)
-        model_name = model_override or 'gemini-2.5-flash'
+        model_name = model_override or 'gemini-1.5-flash-latest'
         model = genai.GenerativeModel(
             model_name,
             system_instruction=system
         )
         
-        # Gemini uses a different format for messages
-        gemini_messages = [msg['content'] for msg in messages if msg['role'] == 'user']
+        # Convert messages to Gemini's multi-turn format (role: 'user' or 'model')
+        contents = []
+        for msg in messages:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append({
+                "role": role,
+                "parts": [{"text": msg["content"]}]
+            })
         
+        # The last message should be from the user to trigger a generation
+        # If the last message is from the assistant (rare), we'll append a nudge
+        if contents and contents[-1]["role"] == "model":
+            contents.append({"role": "user", "parts": [{"text": "Continue."}]})
+
         response = await model.generate_content_async(
-            gemini_messages,
+            contents,
             generation_config=genai.types.GenerationConfig(
                 temperature=temperature,
                 max_output_tokens=max_tokens

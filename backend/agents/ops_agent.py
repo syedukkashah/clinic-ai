@@ -294,20 +294,20 @@ async def trigger_alert(
     if severity not in valid_severities:
         severity = "WARNING"
 
-    alert = await crud.create_ops_alert(
-        db,
-        message=message,
-        severity=OpsAlertSeverity(severity.upper()),
-        channel=channel,
-        agent="ops_monitor",
-    )
+    alert = await crud.create_ops_alert(db, {
+        "title": message,
+        "severity": severity,
+        "type": "ops_monitor",
+        "reasoning": message,
+        "trace": [],
+        "recommendedActions": [],
+    })
     PROM_OPS_ALERTS.labels(severity=severity).inc()
-    logger.info("OpsAgent alert [%s]: %s", severity.upper(), message[:120])
 
     return {
-        "alert_id": alert.id,
+        "alert_id": alert["id"],
         "severity": severity,
-        "created_at": alert.created_at.isoformat(),
+        "created_at": alert["timestamp"],
     }
 
 
@@ -339,13 +339,10 @@ async def suggest_open_slots(
     if slots:
         await crud.create_notification(
             db,
-            doctor_id=doctor_id,
-            patient_id=None,
-            message=(
-                f"[Ops Agent] {count} new slots have been opened for you on {date} "
-                f"due to predicted high patient load. Please review your schedule."
-            ),
-            mock=True,  # demo mode — no real SMS/email
+            recipient_id=doctor_id,
+            recipient_type="doctor",
+            message=f"[Ops Agent] {count} new slots opened for you on {date} due to predicted high patient load.",
+            lang="en",
         )
         notified = True
         PROM_REASSIGN.inc(count)

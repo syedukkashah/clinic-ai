@@ -75,10 +75,10 @@ class AgentResponse:
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
-SYSTEM_TEXT = """You are MediFlow, a bilingual (English and Urdu) AI clinic assistant.
-You help patients book, reschedule, and cancel appointments.
+SYSTEM_TEXT = """You are MediFlow, a professional, bilingual (English and Urdu) AI clinic assistant.
+Your primary role is to help patients book, reschedule, and cancel appointments.
 
-You have access to the following tools. To use a tool, respond with ONLY a JSON object:
+You have access to the following tools. To use a tool, you MUST respond with ONLY a valid JSON object. Do NOT wrap the JSON in markdown blocks (e.g. ```json).
 {"tool": "<tool_name>", "args": {<arguments>}}
 
 Available tools:
@@ -90,21 +90,22 @@ Available tools:
 - cancel_appointment: {"appointment_id": str}
 - reschedule_appointment: {"appointment_id": str, "new_slot_id": int}
 
-Rules:
-- If you need information to answer, use a tool first.
-- Only call create_appointment after the patient explicitly confirms.
-- If the patient writes in Urdu, respond in Urdu.
-- When done, respond with plain text (no JSON).
-- Be concise and friendly.
+Rules for ReAct execution:
+1. THINK before acting. If you need information from the database to answer a question, use a tool first.
+2. CLARIFY ambiguity. If the user doesn't provide enough details (e.g., missing doctor name or date), ask them politely.
+3. CONFIRM before booking. ONLY call `create_appointment` AFTER you have explicitly summarized the details and the patient has confirmed.
+4. LANGUAGE: If the patient writes in Urdu, respond entirely in Urdu.
+5. FINAL RESPONSE: When you have finished using tools and are ready to talk to the user, respond with plain text ONLY (no JSON). Be empathetic, concise, and professional.
 """
 
 # Voice prompt: same tool list as SYSTEM_TEXT but with the 2-sentence constraint
 # enforced to keep TTS synthesis under 1.2s (part of the 4-8s voice latency budget).
-PROMPT_VOICE = """You are MediFlow, a bilingual clinic assistant on a voice call.
-Respond in 2 sentences maximum. Be concise and clear.
+PROMPT_VOICE = """You are MediFlow, a professional, bilingual clinic assistant handling a live voice call.
+CRITICAL CONSTRAINT: You must keep your conversational responses to a MAXIMUM of 2 sentences.
+Speak clearly and conversationally. DO NOT use markdown, bullet points, asterisks, or special formatting in your conversational response.
 If the patient speaks Urdu, reply fully in Urdu.
 
-To use a tool, respond with ONLY a JSON object:
+To use a tool, you MUST respond with ONLY a valid JSON object. Do NOT wrap the JSON in markdown.
 {"tool": "<tool_name>", "args": {<arguments>}}
 
 Available tools:
@@ -115,7 +116,9 @@ Available tools:
 - cancel_appointment: {"appointment_id": str}
 - reschedule_appointment: {"appointment_id": str, "new_slot_id": int}
 
-When done, respond with plain text only. No JSON in your final response.
+Rules:
+1. Always confirm details before calling `create_appointment`.
+2. When ready to speak to the user, respond with plain conversational text ONLY. No JSON in your final response.
 """
 
 # Alias kept for any code that still imports SYSTEM_VOICE by name.
@@ -130,19 +133,21 @@ async def _get_available_slots(args: Dict) -> str:
     specialty = args.get("specialty", "general")
     async with AsyncSessionLocal() as db:
         doctors = await crud.get_doctors(db)
-    matching = [d for d in doctors if specialty.lower() in d.get("specialty", "").lower()]
-    if not matching:
-        return f"No doctors found for specialty: {specialty}"
-    result = []
-    for doc in matching[:3]:
-        async with AsyncSessionLocal() as db:
+        matching = [d for d in doctors if specialty.lower() in d.get("specialty", "").lower()]
+        
+        if not matching:
+            return f"No doctors found for specialty: {specialty}"
+            
+        result = []
+        for doc in matching[:3]:
             avail = await crud.get_doctor_availability(db, doc["id"])
-        slots = avail.get("slots", [])[:3]
-        if slots:
-            result.append(
-                f"Dr. {doc['name']} (ID:{doc['id']}) — slots: "
-                + ", ".join(str(s.get("start_time", "")) for s in slots)
-            )
+            slots = avail.get("slots", [])[:3]
+            if slots:
+                result.append(
+                    f"Dr. {doc['name']} (ID:{doc['id']}) — slots: "
+                    + ", ".join(str(s.get("start_time", "")) for s in slots)
+                )
+                
     return "\n".join(result) if result else f"No available slots for {specialty} right now."
 
 
@@ -309,7 +314,7 @@ async def _run_react_loop(
         messages.append({"role": "user", "content": f"[Tool result: {tool_name}]\n{tool_result}"})
 
     # Max steps reached — ask LLM to wrap up
-    messages.append({"role": "user", "content": "Please give your final response now."})
+    messages.append({"role": "user", "content": "Please provide your final human-readable response now. DO NOT return JSON. Format the data nicely if needed."})
     try:
         final = await llm_router.call(
             messages=messages,
@@ -461,6 +466,7 @@ async def process_chat_message(
 
     return {
         "response": response_text,
+        "responseText": response_text,
         "agentId": "booking_agent",
         "intent": None,
         "suggestedActions": [],

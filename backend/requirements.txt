@@ -74,10 +74,10 @@ deepgram-sdk==3.7.7                # Deepgram Nova-3 STT + Aura-2 TTS (v5.0 voic
 # Fallback: local openai-whisper (lazy-loaded on first use, NOT at import time)
 # -----------------------------------------------------------------------------
 # openai-whisper==20240930             # Speech-to-text for voice triage
-                                   # IMPORTANT: requires torch (see torch section below)
-ffmpeg-python==0.2.0               # whisper requires ffmpeg for audio decoding
-                                   # also install system ffmpeg: apt-get install -y ffmpeg
-                                   # (add to Dockerfile RUN step)
+#                                      # IMPORTANT: requires torch (see torch section below)
+# ffmpeg-python==0.2.0                 # whisper requires ffmpeg for audio decoding
+#                                      # also install system ffmpeg: apt-get install -y ffmpeg
+#                                      # (add to Dockerfile RUN step)
 
 
 # -----------------------------------------------------------------------------
@@ -151,3 +151,4 @@ aiofiles==23.2.1                   # async file read/write for voice temp files
 # Serialization
 # -----------------------------------------------------------------------------
 orjson==3.10.5                     # fast JSON (used by FastAPI response serialization)
+pandas==2.2.2                       # required for data seeding (scripts/seed.py)

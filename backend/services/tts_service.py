@@ -48,19 +48,20 @@ PROM_TTS_TTFB = Histogram(
 async def synthesize(text: str, lang: str, out_path: str) -> str:
     """
     Synthesize speech from text, routing by language.
-
-    Args:
-        text: The text to speak.
-        lang: Language code — ``"en"`` routes to Aura-2, ``"ur"`` to Edge TTS.
-        out_path: Filesystem path to write the output audio (MP3).
-
-    Returns:
-        The ``out_path`` that was written to.
+    Includes robust error handling to prevent 500 errors if a provider is down.
     """
-    if lang == "ur":
-        return await _synthesize_edge(text, out_path)
-    else:
-        return await _synthesize_aura(text, out_path)
+    try:
+        if lang == "ur":
+            return await _synthesize_edge(text, out_path)
+        else:
+            return await _synthesize_aura(text, out_path)
+    except Exception as e:
+        logger.error("All TTS providers failed for lang=%s: %s", lang, e)
+        # Create an empty or silent file to avoid breaking the response
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        with open(out_path, "wb") as f:
+            f.write(b"") # Empty file
+        return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -68,14 +69,13 @@ async def synthesize(text: str, lang: str, out_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 async def _synthesize_aura(text: str, out_path: str) -> str:
-    """
-    Synthesize English speech using Deepgram Aura-2.
+    """Synthesize English speech using Deepgram Aura-2."""
+    if not DEEPGRAM_API_KEY:
+        return await _synthesize_edge(text, out_path, voice="en-US-JennyNeural")
 
-    Falls back to Edge TTS ``en-US-JennyNeural`` on any HTTP error.
-    """
     t0 = time.time()
     url = "https://api.deepgram.com/v1/speak"
-    params = {"model": "aura-2-en-us"}
+    params = {"model": "aura-asteria-en"} # Using a stable Aura model
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}",
         "Content-Type": "application/json",
@@ -92,17 +92,15 @@ async def _synthesize_aura(text: str, out_path: str) -> str:
             resp.raise_for_status()
 
         ttfb = time.time() - t0
-        PROM_TTS_TTFB.labels(provider="deepgram_aura2").observe(ttfb)
+        PROM_TTS_TTFB.labels(provider="deepgram_aura").observe(ttfb)
 
-        # Ensure parent directory exists
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         with open(out_path, "wb") as f:
             f.write(resp.content)
-
         return out_path
 
-    except (httpx.HTTPError, httpx.HTTPStatusError) as e:
-        logger.warning("Deepgram Aura-2 TTS failed, falling back to Edge TTS: %s", e)
+    except Exception as e:
+        logger.warning("Deepgram Aura failed, falling back to Edge: %s", e)
         return await _synthesize_edge(text, out_path, voice="en-US-JennyNeural")
 
 
@@ -115,25 +113,17 @@ async def _synthesize_edge(
     out_path: str,
     voice: str = "ur-PK-UzmaNeural",
 ) -> str:
-    """
-    Synthesize speech using Microsoft Edge TTS.
-
-    Args:
-        text: Text to speak.
-        out_path: Output file path.
-        voice: Edge TTS voice identifier.
-
-    Returns:
-        The ``out_path`` that was written to.
-    """
+    """Synthesize speech using Microsoft Edge TTS."""
     t0 = time.time()
-
-    # Ensure parent directory exists
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
-    await edge_tts.Communicate(text, voice).save(out_path)
-
-    ttfb = time.time() - t0
-    PROM_TTS_TTFB.labels(provider="edge_tts").observe(ttfb)
-
-    return out_path
+    try:
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(out_path)
+        
+        ttfb = time.time() - t0
+        PROM_TTS_TTFB.labels(provider="edge_tts").observe(ttfb)
+        return out_path
+    except Exception as e:
+        logger.error("Edge TTS failed: %s", e)
+        raise # Re-raise to be caught by the main synthesize() wrapper

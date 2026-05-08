@@ -1,4 +1,138 @@
-# Production volume persistence for ChromaDB RAG index
-# Ensures the vector store survives container rebuilds without manual re-ingestion.
+name: mediflow-prod
+
+services:
+  nginx:
+    image: ghcr.io/${GITHUB_REPOSITORY}/clinic-nginx:latest
+    ports:
+      - "80:80"
+      - "8080:8080"
+    depends_on:
+      - api
+      - frontend_patient
+      - frontend_admin
+    restart: always
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=mediflow
+      - POSTGRES_USER=mediflow
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY}/clinic-api:latest
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${JWT_SECRET}
+      - GEMINI_API_KEYS=${GEMINI_API_KEYS}
+      - GROQ_API_KEYS=${GROQ_API_KEYS}
+      - TOGETHER_API_KEYS=${TOGETHER_API_KEYS}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+    volumes:
+      - chroma_data:/app/data/chroma_db
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  ml_service:
+    image: ghcr.io/${GITHUB_REPOSITORY}/clinic-ml-service:latest
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      - postgres
+      - mlflow
+    restart: always
+
+  frontend_admin:
+    image: ghcr.io/${GITHUB_REPOSITORY}/clinic-frontend-admin:latest
+    restart: always
+
+  frontend_patient:
+    image: ghcr.io/${GITHUB_REPOSITORY}/clinic-frontend-patient:latest
+    restart: always
+
+  celery_worker:
+    image: ghcr.io/${GITHUB_REPOSITORY}/clinic-api:latest
+    command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  celery_beat:
+    image: ghcr.io/${GITHUB_REPOSITORY}/clinic-api:latest
+    command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.2
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      --default-artifact-root /mlflow/artifacts
+    environment:
+      - MLFLOW_TRACKING_URI=http://0.0.0.0:5000
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      - postgres
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prom_data:/prometheus
+    restart: always
+
+  grafana:
+    image: grafana/grafana:11.1.5
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: always
+
 volumes:
+  postgres_data:
+  redis_data:
+  grafana_data:
   chroma_data:
+  mlflow_artifacts:
+  prom_data:

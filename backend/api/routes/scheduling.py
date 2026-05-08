@@ -7,10 +7,11 @@ router = APIRouter()
 
 
 @router.post("/optimize", response_model=schemas.OptimizationResponse)
-def post_optimize(req: schemas.OptimizationRequest):
-    return run_optimization(req.windowHoursAhead)
+async def post_optimize(req: schemas.OptimizationRequest):
+    return await run_optimization(req.windowHoursAhead)
 
 
 @router.post("/reassign")
-def post_reassign(params: dict):
+async def post_reassign(params: dict):
+    # This could call a more specific reassignment function in scheduling_agent
     return {"success": True, "message": "Reassignment queued"}
