@@ -43,7 +43,7 @@ jobs:
       - name: Run backend tests
         env:
           PYTHONPATH: .
-          ML_SERVICE_URL: http://localhost:8001
+          ML_SERVICE_URL: "http://localhost:8001"
         run: python -m pytest -v tests --ignore=tests/test_redis_memory.py
 
   frontend-tests:
@@ -102,7 +102,7 @@ jobs:
       - name: Run scheduling agent tests
         env:
           PYTHONPATH: .
-          ML_SERVICE_URL: http://localhost:8001
+          ML_SERVICE_URL: "http://localhost:8001"
         run: python -m pytest -v tests/test_scheduling_agent.py
 
   redis-memory-tests:
@@ -318,7 +318,7 @@ jobs:
       - name: Run booking agent tests
         env:
           PYTHONPATH: .
-          ML_SERVICE_URL: http://localhost:8001
+          ML_SERVICE_URL: "http://localhost:8001"
           GROQ_API_KEYS: test-groq-key-1
           GEMINI_API_KEYS: test-gemini-key-1
           MISTRAL_API_KEYS: test-mistral-key-1
@@ -351,7 +351,7 @@ jobs:
       - name: Run voice agent tests
         env:
           PYTHONPATH: .
-          ML_SERVICE_URL: http://localhost:8001
+          ML_SERVICE_URL: "http://localhost:8001"
           GROQ_API_KEYS: test-groq-key-1
           GEMINI_API_KEYS: test-gemini-key-1
           MISTRAL_API_KEYS: test-mistral-key-1
@@ -383,7 +383,7 @@ jobs:
       - name: Run RAG tests
         env:
           PYTHONPATH: .
-          ML_SERVICE_URL: http://localhost:8001
+          ML_SERVICE_URL: "http://localhost:8001"
           GROQ_API_KEYS: test-groq-key-1
           GEMINI_API_KEYS: test-gemini-key-1
           MISTRAL_API_KEYS: test-mistral-key-1
@@ -516,11 +516,11 @@ jobs:
       - name: Run ops agent tests
         env:
           PYTHONPATH: .
-          ML_SERVICE_URL: http://localhost:8001
+          ML_SERVICE_URL: "http://localhost:8001"
           GROQ_API_KEYS: test-groq-key-1
           GEMINI_API_KEYS: test-gemini-key-1
           MISTRAL_API_KEYS: test-mistral-key-1
-          PROMETHEUS_URL: http://localhost:9090
+          PROMETHEUS_URL: "http://localhost:9090"
           ALERTMANAGER_WEBHOOK_TOKEN: ""
         run: python -m pytest -v tests/test_ops_agent.py
 
@@ -546,7 +546,7 @@ jobs:
       - name: Run ML Service MLOps Tests
         env:
           PYTHONPATH: ml_service
-          MLFLOW_TRACKING_URI: sqlite:///ml_service/mlflow_test.db
+          MLFLOW_TRACKING_URI: "sqlite:///ml_service/mlflow_test.db"
         run: python -m pytest -v ml_service/tests/test_mlflow_logic.py ml_service/tests/test_ml_service.py
 
       - name: Install Backend MLOps Dependencies
@@ -558,5 +558,5 @@ jobs:
         env:
           PYTHONPATH: backend
           INTERNAL_SECRET: test_secret
-          ASYNC_TEST_DATABASE_URL: sqlite+aiosqlite:///:memory:
+          ASYNC_TEST_DATABASE_URL: "sqlite+aiosqlite:///:memory:"
         run: python -m pytest -v backend/tests/test_drift_detector.py backend/tests/test_retrain_task.py
