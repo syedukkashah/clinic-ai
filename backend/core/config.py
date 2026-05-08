@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str = ""
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
-    TOGETHER_API_KEYS: str = ""
     OPENROUTER_API_KEYS: str = ""
 
     class Config:

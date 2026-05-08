@@ -47,10 +47,12 @@ services:
       dockerfile: Dockerfile
     environment:
       - DATABASE_URL=postgresql+asyncpg://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+      - MLFLOW_TRACKING_URI=sqlite:////mlflow/mlflow.db
     ports:
       - "8001:8001"
     volumes:
       - ./ml_service:/app
+      - mlflow_data:/mlflow
     depends_on:
       - postgres
 
@@ -103,3 +105,4 @@ volumes:
   postgres_data:
   grafana_data:
   chroma_data:
+  mlflow_data:

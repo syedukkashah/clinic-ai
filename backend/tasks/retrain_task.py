@@ -1,45 +1,39 @@
 import asyncio
 import logging
-import subprocess
-import sys
-import httpx
 import os
 
+import httpx
 from celery import shared_task
 from tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://ml-service:8001")
+ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://ml_service:8001")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "mediflow-internal-secret")
-
-SCRIPT_MAP = {
-    "wait_time_model": "training/train_wait_time.py",
-    "patient_load_model": "training/train_load_forecast.py",
-}
 
 
 @shared_task(name="training.retrain_model", bind=True, max_retries=1)
 def retrain_model(self, model_name: str, reason: str):
-    script = SCRIPT_MAP.get(model_name)
-    if not script:
-        logger.error("Unknown model: %s", model_name)
-        return {"error": f"Unknown model: {model_name}"}
-
+    """Trigger retraining of a specific model via the ML Service API.
+    
+    The training scripts live in the ml_service container, not in the backend.
+    We communicate via the /retrain HTTP endpoint.
+    """
     logger.info("Retraining %s — reason: %s", model_name, reason)
     try:
-        result = subprocess.run(
-            [sys.executable, script, "--reason", reason],
-            capture_output=True,
-            text=True,
-            timeout=3600,
+        import httpx
+        response = httpx.post(
+            f"{ML_SERVICE_URL}/retrain",
+            headers={"X-Internal-Secret": INTERNAL_SECRET},
+            timeout=600.0,
         )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
-        logger.info("Retrain complete: %s", model_name)
-        return {"model_name": model_name, "status": "completed"}
+        if response.status_code == 200:
+            logger.info("Retrain complete for %s: %s", model_name, response.json())
+            return {"model_name": model_name, "status": "completed", "reason": reason}
+        else:
+            raise RuntimeError(f"ML service returned {response.status_code}: {response.text}")
     except Exception as exc:
-        logger.error("Retrain failed: %s", exc)
+        logger.error("Retrain failed for %s: %s", model_name, exc)
         raise self.retry(exc=exc, countdown=300)
 
 

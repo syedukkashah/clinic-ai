@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -169,7 +169,7 @@ def train_load_forecast_model(data_path: str = "data/daily_load.csv") -> dict:
             "p50": float(np.percentile(val_predictions, 50)),
             "p90": float(np.percentile(val_predictions, 90)),
             "n_samples": len(val_predictions),
-            "saved_at": datetime.utcnow().isoformat()
+            "saved_at": datetime.now(timezone.utc).isoformat()
         }
         with open(f"mlops/baselines/{LOAD_FORECAST_MODEL}_stats.json", "w") as f:
             json.dump(stats, f)

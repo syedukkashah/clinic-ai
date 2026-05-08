@@ -229,32 +229,43 @@ async def predict_wait_time(
             "avg_consult_duration": request.avg_consult_duration,
         }
         
-        # Load the feature names the teammate's model was actually trained on
+        # Categorical columns need string defaults (not 0) because the
+        # sklearn Pipeline preprocessor expects strings for OHE/Ordinal encoding.
+        # The encoders are configured with handle_unknown='ignore'/'use_encoded_value'
+        # so providing 'unknown' is safe and will be handled gracefully.
+        CATEGORICAL_DEFAULTS = {
+            "specialty": "general",
+            "urgency": "routine",
+            "season": "normal",
+            "patient_preferred_lang": "en",
+            "booking_channel": "chat",
+        }
+
+        # Load the feature names the model was actually trained on
         try:
-            # For MLflow PyFunc models, we can inspect the expected inputs if a signature was saved
             if wait_time_model.metadata and wait_time_model.metadata.signature:
                 trained_wait_features = wait_time_model.metadata.signature.inputs.input_names()
             else:
-                # Try to unwrap and get feature names
                 underlying = wait_time_model.unwrap_python_model()
                 trained_wait_features = list(underlying.feature_names_in_)
         except Exception:
-            # Hardcoded fallback just in case to the exact 19 features the teammate used
             trained_wait_features = [
                 'patient_age', 'doctor_id', 'day_of_week', 'hour_of_day', 
                 'booking_lead_days', 'appointments_before', 'queue_depth', 
                 'avg_consult_duration', 'historical_wait_slot', 'week_of_year', 
                 'is_follow_up', 'is_holiday', 'is_ramadan', 'is_day_after_holiday', 
-                'specialty_enc', 'urgency_enc', 'season_enc', 
-                'patient_preferred_lang_enc', 'booking_channel_enc'
+                'specialty', 'urgency', 'season', 
+                'patient_preferred_lang', 'booking_channel'
             ]
 
         row_dict = {}
         for col in trained_wait_features:
             if col in features:
                 row_dict[col] = features[col]
+            elif col in CATEGORICAL_DEFAULTS:
+                row_dict[col] = CATEGORICAL_DEFAULTS[col]
             else:
-                row_dict[col] = 0  # Default missing features to 0
+                row_dict[col] = 0  # Numeric default
                 
         # Ensure correct column order
         feature_df = pd.DataFrame([row_dict])[trained_wait_features]
