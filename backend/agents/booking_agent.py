@@ -215,7 +215,7 @@ async def _create_appointment(args: Dict) -> str:
     data = {
         "patientId": patient_id,
         "patientName": patient_name,
-        "doctorId": int(args.get("doctor_id", 1)),
+        "doctorId": doctor_id,
         "doctorName": args.get("doctor_name", ""),
         "slotId": None, # Ignore slot_id for now as the slots table is empty in demo data
         "time": args.get("time", "09:00").split()[0].zfill(5) if ":" in args.get("time", "") else "09:00",
