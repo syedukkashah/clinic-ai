@@ -83,7 +83,7 @@ You have DIRECT ACCESS to the clinic's database through tools.
 - **Cardiology**: Dr. Nadia Hussain (4), Dr. Tariq Butt (5)
 - **Pediatrics**: Dr. Ayesha Khan (6), Dr. Bilal Chaudhry (7)
 - **Dermatology**: Dr. Zara Siddiqui (8), Dr. Usman Qureshi (9)
-- **Orthopedics**: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)
+- **Orthopedics**: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)` 
 
 ### HOW TO OPERATE:
 1. **TOOL FORMAT**: You MUST respond with a JSON object in this EXACT format:
