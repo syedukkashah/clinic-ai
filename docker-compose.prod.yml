@@ -34,6 +34,14 @@ services:
       - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - STAFF_EMAIL=${STAFF_EMAIL}
+      - STAFF_PASSWORD=${STAFF_PASSWORD}
+      - ALLOW_DEMO_AUTH=${ALLOW_DEMO_AUTH:-false}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
       - GEMINI_API_KEYS=${GEMINI_API_KEYS}
       - GROQ_API_KEYS=${GROQ_API_KEYS}
       - TOGETHER_API_KEYS=${TOGETHER_API_KEYS}
@@ -43,6 +51,7 @@ services:
       - ML_SERVICE_URL=http://ml_service:8001
       - PROMETHEUS_URL=http://prometheus:9090
       - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
+      - WEB_CONCURRENCY=${API_WEB_CONCURRENCY:-1}
     volumes:
       - chroma_data:/app/data/chroma_db
     depends_on:
@@ -60,6 +69,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
+      - WEB_CONCURRENCY=${ML_WEB_CONCURRENCY:-1}
     depends_on:
       - postgres
       - mlflow
@@ -81,6 +92,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
       - ML_SERVICE_URL=http://ml_service:8001
       - PROMETHEUS_URL=http://prometheus:9090
       - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}
@@ -97,6 +109,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
       - ML_SERVICE_URL=http://ml_service:8001
       - PROMETHEUS_URL=http://prometheus:9090
       - ALERTMANAGER_WEBHOOK_TOKEN=${ALERTMANAGER_WEBHOOK_TOKEN}

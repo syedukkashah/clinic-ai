@@ -98,6 +98,7 @@ temp/
 .env
 .env.*
 !.env.example
+!.env.deploy.example
 
 __pycache__/
 *.py[cod]
@@ -183,6 +184,7 @@ error.md
 
 # ChromaDB vector store — binary artifact, never commit
 backend/data/chroma_db/
+backend/celerybeat-schedule
 mediflow_dump.sql
 mediflow_dump_utf8.sql
 ml_service/data_/

@@ -1,0 +1,133 @@
+name: mediflow-backend
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@mediflow.io}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      STAFF_EMAIL: ${STAFF_EMAIL:-staff@mediflow.io}
+      STAFF_PASSWORD: ${STAFF_PASSWORD:-}
+      ALLOW_DEMO_AUTH: ${ALLOW_DEMO_AUTH:-false}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml_service:8001}
+      RAG_AUTO_INGEST: ${RAG_AUTO_INGEST:-true}
+      GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+      MISTRAL_API_KEYS: ${MISTRAL_API_KEYS:-}
+      TOGETHER_API_KEYS: ${TOGETHER_API_KEYS:-}
+      OPENROUTER_API_KEYS: ${OPENROUTER_API_KEYS:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-}
+      ALERTMANAGER_WEBHOOK_TOKEN: ${ALERTMANAGER_WEBHOOK_TOKEN:-}
+      WEB_CONCURRENCY: ${API_WEB_CONCURRENCY:-1}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/app/data/chroma_db
+      - static_audio:/app/static/audio
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml_service:8001}
+      GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+      MISTRAL_API_KEYS: ${MISTRAL_API_KEYS:-}
+      TOGETHER_API_KEYS: ${TOGETHER_API_KEYS:-}
+      OPENROUTER_API_KEYS: ${OPENROUTER_API_KEYS:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-}
+      ALERTMANAGER_WEBHOOK_TOKEN: ${ALERTMANAGER_WEBHOOK_TOKEN:-}
+    volumes:
+      - static_audio:/app/static/audio
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml_service:8001}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-}
+      ALERTMANAGER_WEBHOOK_TOKEN: ${ALERTMANAGER_WEBHOOK_TOKEN:-}
+    volumes:
+      - celery_beat_state:/app/celerybeat
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ml_service:
+    profiles: ["ml"]
+    build:
+      context: ./ml_service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${ML_DATABASE_URL:?ML_DATABASE_URL is required when ml profile is enabled}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
+      WEB_CONCURRENCY: ${ML_WEB_CONCURRENCY:-1}
+    ports:
+      - "${ML_SERVICE_PORT:-8001}:8001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:
+  chroma_data:
+  static_audio:
+  celery_beat_state:

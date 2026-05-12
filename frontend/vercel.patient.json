@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run deploy:admin",
-  "outputDirectory": "dist-admin/client",
+  "buildCommand": "npm run deploy:patient",
+  "outputDirectory": "dist-patient/client",
   "framework": "vite",
   "rewrites": [
     {
