@@ -27,6 +27,14 @@ async def test_intent_router_operational_examples():
             result = await route_intent(msg)
             assert result == "OPERATIONAL", f"Failed for: {msg}"
 
+
+@pytest.mark.asyncio
+async def test_doctor_listing_routes_operational_without_llm():
+    with patch("services.intent_router.llm_router.call", AsyncMock()) as mock_call:
+        result = await route_intent("list cardiologists")
+    assert result == "OPERATIONAL"
+    mock_call.assert_not_called()
+
 @pytest.mark.asyncio
 async def test_intent_router_informational_examples():
     """Verify that policy/info-related messages route to INFORMATIONAL."""

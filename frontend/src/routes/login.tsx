@@ -17,8 +17,9 @@ function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const role = "admin" as const;
+  const demoEnabled = import.meta.env.VITE_ALLOW_DEMO_AUTH !== "false";
   const [email, setEmail] = useState("admin@mediflow.io");
-  const [password, setPassword] = useState("demo");
+  const [password, setPassword] = useState(demoEnabled ? "demo" : "");
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -142,9 +143,11 @@ function LoginPage() {
             Sign in to dashboard
           </Button>
 
-          <p className="text-xs text-center text-muted-foreground">
-            Demo mode — use admin@mediflow.io / demo.
-          </p>
+          {demoEnabled ? (
+            <p className="text-xs text-center text-muted-foreground">
+              Demo mode: use admin@mediflow.io / demo.
+            </p>
+          ) : null}
         </motion.form>
       </div>
     </div>

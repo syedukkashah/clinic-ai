@@ -3,6 +3,9 @@ FROM python:3.12-slim
 
 # Set the working directory in the container
 WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    WEB_CONCURRENCY=1
 
 # Install system dependencies
 # libpq-dev is required for psycopg2
@@ -30,4 +33,4 @@ EXPOSE 8000
 
 # Default command to run the FastAPI application
 # In a real deployment, you might override this for Celery workers
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1}"]

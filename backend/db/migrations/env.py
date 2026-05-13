@@ -9,6 +9,7 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 import os
 import sys
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
@@ -21,12 +22,25 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+
+def normalize_sync_postgres_url(url: str) -> str:
+    if not (url.startswith("postgresql://") or url.startswith("postgresql+")):
+        return url
+
+    parsed = urlsplit(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    if "ssl" in query and "sslmode" not in query:
+        query["sslmode"] = query.pop("ssl")
+    return urlunsplit(
+        ("postgresql", parsed.netloc, parsed.path, urlencode(query), parsed.fragment)
+    )
+
+
 def get_url():
     # Priority 1: Use the full DATABASE_URL if available (set in docker-compose)
     url = os.environ.get("DATABASE_URL")
     if url:
-        # Alembic/SQLAlchemy can handle the +psycopg2 part, but if not we can strip it
-        return url.replace("postgresql+psycopg2://", "postgresql://")
+        return normalize_sync_postgres_url(url)
     
     # Priority 2: Build it from components (fallback for local runs)
     password = os.environ.get("POSTGRES_PASSWORD", "mediflow")

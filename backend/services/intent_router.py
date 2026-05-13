@@ -25,14 +25,14 @@ ROUTING_PROMPT = """Classify this patient message into exactly ONE category.
 
 OPERATIONAL: booking appointment, rescheduling, cancelling,
 checking wait time, doctor availability, queue status,
-viewing or managing appointments, complaint about a specific visit.
+listing doctors by specialty, viewing or managing appointments,
+complaint about a specific visit.
 
 INFORMATIONAL: clinic hours, opening times, doctor qualifications,
-doctor specialization, doctor biography, clinic policies,
-preparation instructions before appointment, what to bring,
-insurance questions, payment methods, consultation fees,
-FAQs, visiting guidelines, parking, emergency guidance,
-pharmacy questions, medical certificates, prescription policies,
+doctor biography, clinic policies, preparation instructions before
+appointment, what to bring, insurance questions, payment methods,
+consultation fees, FAQs, visiting guidelines, parking, emergency
+guidance, pharmacy questions, medical certificates, prescription policies,
 medical records policy.
 
 EXAMPLES:
@@ -48,9 +48,29 @@ OPERATIONAL
 Message: "Does Dr. Smith take insurance?"
 INFORMATIONAL
 
+Message: "List cardiologists"
+OPERATIONAL
+
 Reply with ONLY the single word: OPERATIONAL or INFORMATIONAL
 
 Message: {message}"""
+
+
+def _keyword_route(message: str) -> str | None:
+    text = message.lower()
+    listing_words = ("list", "show", "find", "available", "who are")
+    doctor_words = (
+        "doctor",
+        "doctors",
+        "cardiologist",
+        "cardiologists",
+        "pediatrician",
+        "dermatologist",
+        "orthopedic",
+    )
+    if any(word in text for word in listing_words) and any(word in text for word in doctor_words):
+        return "OPERATIONAL"
+    return None
 
 
 async def route_intent(message: str) -> str:
@@ -58,6 +78,11 @@ async def route_intent(message: str) -> str:
     Returns 'OPERATIONAL' or 'INFORMATIONAL'.
     Defaults to 'OPERATIONAL' on any failure.
     """
+    keyword_intent = _keyword_route(message)
+    if keyword_intent:
+        PROM_INTENT_ROUTE.labels(intent=keyword_intent).inc()
+        return keyword_intent
+
     try:
         prompt = ROUTING_PROMPT.format(message=message)
         resp = await llm_router.call(

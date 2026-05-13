@@ -10,6 +10,8 @@
     "build": "vite build",
     "build:admin": "vite build --mode admin --outDir dist-admin",
     "build:patient": "vite build --mode patient --outDir dist-patient",
+    "deploy:admin": "npm run build:admin && node scripts/generate-index.mjs dist-admin",
+    "deploy:patient": "npm run build:patient && node scripts/generate-index.mjs dist-patient",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "preview:admin": "vite preview --mode admin --outDir dist-admin",

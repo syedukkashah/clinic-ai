@@ -185,6 +185,7 @@ class ClinicMetrics(BaseModel):
 class ChatMessage(BaseModel):
     userId: str
     message: str
+    lang: Literal["en", "ur"] = "en"
 
 
 class ChatResponse(BaseModel):

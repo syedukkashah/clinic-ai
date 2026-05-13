@@ -3,6 +3,7 @@ Tests for the Booking Agent ReAct loop.
 Uses mocked LLM router and mocked DB so no real services needed.
 """
 import pytest
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from agents.booking_agent import (
     process_chat_message,
@@ -34,6 +35,21 @@ def test_parse_tool_call_unknown_tool():
     assert result is None
 
 
+def test_parse_tool_call_normalizes_aliases():
+    text = '{"tool": "list_doctors", "args": {"specialization": "Cardiologists"}}'
+    result = _parse_tool_call(text)
+    assert result is not None
+    assert result["tool"] == "list_doctors"
+    assert result["args"]["specialty"] == "cardiology"
+
+
+def test_voice_prompt_has_patient_facing_guardrails():
+    from agents.booking_agent import PROMPT_VOICE
+
+    assert "Never speak JSON" in PROMPT_VOICE
+    assert "Do not create an appointment until" in PROMPT_VOICE
+
+
 def test_parse_tool_call_invalid_json():
     text = '{"tool": "get_available_slots", "args": {invalid}}'
     result = _parse_tool_call(text)
@@ -55,6 +71,23 @@ def mock_redis():
     redis.get = AsyncMock(return_value=None)
     redis.setex = AsyncMock(return_value=True)
     return redis
+
+
+class FakeRedis:
+    def __init__(self):
+        self.store = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def setex(self, key, ttl, value):
+        self.store[key] = value
+
+    async def delete(self, key):
+        self.store.pop(key, None)
+
+    async def exists(self, key):
+        return key in self.store
 
 
 @pytest.fixture
@@ -137,8 +170,72 @@ async def test_process_chat_no_redis(mock_llm_plain_response):
 
 
 @pytest.mark.anyio
+async def test_process_chat_suppresses_unknown_tool_json(mock_redis):
+    """Unknown model tool calls must never leak raw JSON to patients."""
+    mock_response = MagicMock()
+    mock_response.text = '{"tool": "unknown_tool", "args": {}}'
+    with patch("agents.booking_agent.llm_router") as mock_router:
+        mock_router.call = AsyncMock(return_value=mock_response)
+        result = await process_chat_message(
+            user_id="test-user",
+            message="clinic timings",
+            redis_client=mock_redis,
+        )
+    assert '{"tool"' not in result["response"]
+    assert "more detail" in result["response"].lower()
+
+
+@pytest.mark.anyio
+async def test_create_appointment_requires_missing_details():
+    """The tool must ask for missing patient details instead of creating fake appointments."""
+    result = await _create_appointment({
+        "doctor_id": 1,
+        "appointment_date": "2026-05-13",
+        "appointment_time": "09:00",
+        "reason": "General Check-up",
+    })
+    assert "full name" in result.lower()
+
+
+@pytest.mark.anyio
+async def test_booking_state_completes_after_contact_number():
+    """A realistic booking conversation should preserve state and confirm after phone."""
+    redis = FakeRedis()
+    session_id = "patient-session"
+
+    with patch("agents.booking_agent._list_doctors", AsyncMock(return_value="Available doctors:\nDr. Kamran Iqbal (ID 3), General Practice")), \
+         patch("agents.booking_agent._create_appointment", AsyncMock(return_value="Appointment confirmed! ID: apt-test. Date: 2026-05-18 at 08:00.")) as mock_create:
+        first = await process_chat_message(
+            user_id=session_id,
+            message="i want to book an appointment. I have flu. which doctors are available",
+            redis_client=redis,
+        )
+        assert "Kamran" in first["response"]
+
+        second = await process_chat_message(
+            user_id=session_id,
+            message="My name is rayyan, I have fever and cold. I want to visit doctor kamran on monday at 8 am",
+            redis_client=redis,
+        )
+        assert "contact number" in second["response"].lower()
+
+        final = await process_chat_message(
+            user_id=session_id,
+            message="03352034811",
+            redis_client=redis,
+        )
+
+    assert "Appointment confirmed" in final["response"]
+    args = mock_create.await_args.args[0]
+    assert args["patient_name"] == "Rayyan"
+    assert args["doctor_id"] == 3
+    assert args["time"] == "08:00"
+    assert args["contact_number"] == "03352034811"
+
+
+@pytest.mark.anyio
 async def test_process_chat_tool_then_plain(mock_redis, mock_llm_tool_then_plain):
-    """Agent executes tool call then returns plain text response."""
+    """Booking requests with missing details ask a safe clarification before LLM tool use."""
     responses = iter(mock_llm_tool_then_plain)
     with patch("agents.booking_agent.llm_router") as mock_router, \
          patch.dict("agents.booking_agent.TOOL_MAP", {
@@ -150,12 +247,13 @@ async def test_process_chat_tool_then_plain(mock_redis, mock_llm_tool_then_plain
             message="I need a general medicine appointment",
             redis_client=mock_redis,
         )
-    assert result["response"] == "Here are the available slots for general medicine."
+    assert "full name" in result["response"].lower()
+    assert "appointment date" in result["response"].lower()
 
 
 @pytest.mark.anyio
 async def test_process_chat_voice_mode(mock_redis, mock_llm_plain_response):
-    """Voice mode uses voice system prompt."""
+    """Voice booking mode can answer deterministically when details are missing."""
     with patch("agents.booking_agent.llm_router") as mock_router:
         mock_router.call = AsyncMock(return_value=mock_llm_plain_response)
         result = await process_chat_message(
@@ -164,9 +262,8 @@ async def test_process_chat_voice_mode(mock_redis, mock_llm_plain_response):
             redis_client=mock_redis,
             mode="voice",
         )
-        call_args = mock_router.call.call_args
-        system = call_args.kwargs.get("system") or call_args.args[1]
-        assert "voice" in system.lower() or "1-2" in system
+        mock_router.call.assert_not_called()
+        assert "full name" in result["response"].lower()
 
 
 @pytest.mark.anyio

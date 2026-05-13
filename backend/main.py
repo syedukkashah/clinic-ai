@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
 from redis import asyncio as aioredis
 
@@ -15,12 +17,24 @@ from api.routes import (
     voice, webrtc, twilio_voice,
 )
 
+logger = logging.getLogger(__name__)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis = await aioredis.from_url(settings.REDIS_URL, decode_responses=False)
-    # RAG: auto-ingest clinic documents if ChromaDB collection is empty
-    from services.rag_service import rag_service
-    await asyncio.to_thread(rag_service.ensure_collection_populated)
+    try:
+        await app.state.redis.ping()
+    except Exception as exc:
+        logger.warning("Redis ping failed during startup: %s", exc)
+
+    if os.getenv("RAG_AUTO_INGEST", "true").lower() in {"1", "true", "yes"}:
+        try:
+            from services.rag_service import rag_service
+
+            await asyncio.to_thread(rag_service.ensure_collection_populated)
+        except Exception as exc:
+            logger.exception("RAG startup skipped after initialization failure: %s", exc)
+
     yield
     await app.state.redis.close()
 
@@ -34,12 +48,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

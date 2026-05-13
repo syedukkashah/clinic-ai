@@ -49,7 +49,7 @@ function getWebSocketUrl() {
   }
 
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${window.location.hostname}:8000/ws/portal?portal=${encodeURIComponent(portal)}`;
+  return `${proto}://${window.location.host}/ws/portal?portal=${encodeURIComponent(portal)}`;
 }
 
 type Handler = (event: PortalBusEvent, envelope: Envelope) => void;

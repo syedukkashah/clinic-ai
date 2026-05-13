@@ -17,8 +17,8 @@ ENV VITE_ADMIN_PORTAL_URL=$VITE_ADMIN_PORTAL_URL
 ENV VITE_PATIENT_PORTAL_URL=$VITE_PATIENT_PORTAL_URL
 ENV VITE_PORTAL_WS_URL=$VITE_PORTAL_WS_URL
 
-RUN npm run build:admin  && node scripts/generate-index.mjs dist-admin
-RUN npm run build:patient && node scripts/generate-index.mjs dist-patient
+RUN npm run deploy:admin
+RUN npm run deploy:patient
 
 RUN echo "=== /app/dist-admin/client/ ===" && ls -la /app/dist-admin/client/
 RUN echo "=== /app/dist-patient/client/ ===" && ls -la /app/dist-patient/client/

@@ -3,6 +3,9 @@ FROM python:3.12-slim
 
 # Set the working directory in the container
 WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    WEB_CONCURRENCY=1
 
 # Install system dependencies for build (e.g., for psycopg2)
 RUN apt-get update && apt-get install -y \
@@ -24,4 +27,4 @@ COPY . .
 EXPOSE 8001
 
 # Default command to run the ML prediction service
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8001 --workers ${WEB_CONCURRENCY:-1}"]

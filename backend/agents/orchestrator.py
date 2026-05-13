@@ -11,8 +11,10 @@ from __future__ import annotations
 import logging
 
 from agents.booking_agent import AgentResponse, booking_agent
+from agents.booking_agent import BookingAgent
 from services.intent_router import route_intent
 from services.rag_service import rag_service
+from services.redis_memory import get_booking_state
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from prometheus_client import Counter
@@ -34,6 +36,7 @@ class AgentOrchestrator:
         session_id: str,
         lang: str = "en",
         mode: str = "text",
+        redis=None,
     ) -> AgentResponse:
         """
         Process a text or voice request.
@@ -52,7 +55,16 @@ class AgentOrchestrator:
         Returns:
             AgentResponse from RAG service or BookingAgent.
         """
-        intent = await route_intent(transcript)
+        lowered = transcript.lower().strip()
+        if any(phrase in lowered for phrase in ("talk to an agent", "contact agent", "human agent", "representative")):
+            return AgentResponse(
+                message="Sure. Please use the Contact Agent option and share a short message, and our team will follow up.",
+                appointment_data=None,
+                intent="contact_agent",
+            )
+
+        booking_state = await get_booking_state(redis, session_id) if redis else {}
+        intent = "OPERATIONAL" if booking_state.get("active") else await route_intent(transcript)
         logger.info(
             "Orchestrator intent=%s session=%s lang=%s mode=%s",
             intent,
@@ -68,9 +80,10 @@ class AgentOrchestrator:
                 appointment_data=None,
             )
 
-        # OPERATIONAL → BookingAgent
+        # OPERATIONAL -> BookingAgent
         try:
-            return await booking_agent.run(
+            agent = BookingAgent(redis=redis) if redis is not None else booking_agent
+            return await agent.run(
                 message=transcript,
                 session_id=session_id,
                 lang=lang,
@@ -78,7 +91,8 @@ class AgentOrchestrator:
             )
         except TypeError:
             # Fallback if teammate's BookingAgent uses a slightly different signature
-            return await booking_agent.run(
+            agent = BookingAgent(redis=redis) if redis is not None else booking_agent
+            return await agent.run(
                 transcript,
                 session_id,
                 lang,

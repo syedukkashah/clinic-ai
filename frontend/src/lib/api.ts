@@ -2,9 +2,7 @@ import axios from "axios";
 import { DOCTORS, APPOINTMENTS, ALERTS, WAIT_SERIES, LOAD_FORECAST, SUGGESTIONS, getOverviewStats, ACTIVITY_SEED } from "./mockData";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined"
-    ? `http://${window.location.hostname}:8000/api`
-    : "http://localhost:8000/api");
+  "/api";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

@@ -11,13 +11,14 @@ To manually ingest or re-ingest after editing any .txt file:
 import os
 import sys
 import time
-import asyncio
 import logging
+import shutil
 from pathlib import Path
 
 import chromadb
-from chromadb.utils import embedding_functions
+import numpy as np
 from prometheus_client import Counter, Histogram
+from sklearn.feature_extraction.text import HashingVectorizer
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ COLLECTION_NAME = "mediflow_clinic_docs"
 CHUNK_SIZE = 400
 CHUNK_OVERLAP = 80
 TOP_K = 3
+EMBEDDING_DIMENSIONS = 384
 
 PROM_RAG_QUERIES = Counter(
     "mediflow_rag_queries_total", "RAG query count", ["language"]
@@ -41,25 +43,42 @@ PROM_RAG_EMPTY = Counter(
 )
 
 
+class LocalHashEmbeddingFunction:
+    """
+    Deterministic local embeddings for the small clinic knowledge base.
+
+    Chroma's default embedding function downloads a transformer model at
+    runtime. That is brittle on free-tier hosts, CI, and locked-down Docker
+    environments. This keeps RAG functional without external downloads.
+    """
+
+    def __init__(self) -> None:
+        self._vectorizer = HashingVectorizer(
+            n_features=EMBEDDING_DIMENSIONS,
+            alternate_sign=False,
+            norm="l2",
+            analyzer="char_wb",
+            ngram_range=(3, 5),
+            lowercase=True,
+        )
+
+    def name(self) -> str:
+        return "mediflow-local-hashing-v1"
+
+    def __call__(self, input):
+        docs = [str(item or "") for item in input]
+        vectors = self._vectorizer.transform(docs).astype(np.float32)
+        return vectors.toarray().tolist()
+
+
 def _get_embedding_fn():
     """
     Returns one embedding function consistently.
     CRITICAL: Do not change the embedding model after initial ingest
     without running --ingest again to rebuild the collection.
     """
-    api_key = os.environ.get("GEMINI_API_KEYS", "").split(",")[0].strip()
-    if api_key:
-        try:
-            ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-                api_key=api_key,
-                model_name="models/embedding-001"
-            )
-            logger.info("RAG: using Gemini embedding-001")
-            return ef
-        except Exception as e:
-            logger.warning(f"RAG: Gemini embedding init failed ({e}), using default")
-    logger.info("RAG: using DefaultEmbeddingFunction (downloads ~90MB model once)")
-    return embedding_functions.DefaultEmbeddingFunction()
+    logger.info("RAG: using deterministic local hashing embeddings")
+    return LocalHashEmbeddingFunction()
 
 
 def _chunk_text(text: str, source: str) -> list[dict]:
@@ -93,14 +112,29 @@ class RAGService:
             return
         if self._embed_fn is None:
             self._embed_fn = _get_embedding_fn()
-            
+
         CHROMA_PERSIST.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(CHROMA_PERSIST))
-        self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            embedding_function=self._embed_fn,
-            metadata={"hnsw:space": "cosine"}
-        )
+        try:
+            self._collection = self._client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                embedding_function=self._embed_fn,
+                metadata={"hnsw:space": "cosine"}
+            )
+        except Exception as exc:
+            logger.warning(
+                "RAG: existing collection could not be opened, rebuilding it: %s",
+                exc,
+            )
+            try:
+                self._client.delete_collection(COLLECTION_NAME)
+            except Exception:
+                pass
+            self._collection = self._client.create_collection(
+                name=COLLECTION_NAME,
+                embedding_function=self._embed_fn,
+                metadata={"hnsw:space": "cosine"}
+            )
 
     def ensure_collection_populated(self) -> None:
         """
@@ -108,16 +142,13 @@ class RAGService:
         Safe to call multiple times.
         """
         self._init_client()
-        try:
-            count = self._collection.count()
-            if count == 0:
-                logger.info("RAG: collection empty, auto-ingesting clinic documents...")
-                n = self.ingest_documents()
-                logger.info(f"RAG: auto-ingest complete — {n} chunks loaded")
-            else:
-                logger.info(f"RAG: collection ready with {count} chunks")
-        except Exception as e:
-            logger.error(f"RAG: startup check failed: {e}")
+        count = self._collection.count()
+        if count == 0:
+            logger.info("RAG: collection empty, auto-ingesting clinic documents...")
+            n = self.ingest_documents()
+            logger.info("RAG: auto-ingest complete - %s chunks loaded", n)
+        else:
+            logger.info("RAG: collection ready with %s chunks", count)
 
     def ingest_documents(self) -> int:
         """
@@ -214,16 +245,18 @@ class RAGService:
             else "Respond in English."
         )
 
-        # Voice responses must be short (max 2 sentences) for TTS latency budgets, with NO markdown.
+        # Voice responses must be short for TTS latency budgets, with no markdown.
         if mode == "voice":
             sentence_constraint = "Respond in maximum 2 sentences. DO NOT use markdown, bullet points, or special formatting. Use plain conversational language."
         else:
-            sentence_constraint = "Keep your response to 2 to 4 sentences. You may use simple markdown formatting."
+            sentence_constraint = "Keep your response to 1 to 3 short sentences. Do not use markdown, bullet points, JSON, code blocks, or special formatting."
 
         prompt = f"""You are a professional MediFlow clinic assistant.
-Your ONLY source of information is the provided CONTEXT. 
-If the CONTEXT does not contain the exact answer, you MUST say: "I don't have that specific information. Please call 0800-MEDIFLOW." Do not guess or hallucinate.
-{sentence_constraint} Be friendly, empathetic, and clear.
+Your only source of information is the provided CONTEXT.
+If the CONTEXT does not contain the exact answer, say: "I don't have that specific information. Please call 0800-MEDIFLOW."
+Do not guess, invent policies, expose sources, mention chunks, or mention the retrieval system.
+{sentence_constraint}
+Be friendly, empathetic, and clear. Answer the patient's question directly first.
 {lang_instruction}
 
 --- CONTEXT ---
@@ -237,8 +270,8 @@ ANSWER:"""
         try:
             resp = await llm_router.call(
                 messages=[{"role": "user", "content": prompt}],
-                system="You are a helpful clinic information assistant. Answer only from the provided context.",
-                task_type="urdu" if language == "ur" else "reasoning",
+                system="You are a helpful clinic information assistant. Return only the final patient-facing answer in plain text.",
+                task_type="urdu" if language == "ur" else "rag",
             )
             answer = resp.text if resp and resp.text else None
         except Exception as e:
@@ -259,8 +292,15 @@ rag_service = RAGService()
 
 if __name__ == "__main__":
     if "--ingest" in sys.argv:
+        if "--reset" in sys.argv and CHROMA_PERSIST.exists():
+            for child in CHROMA_PERSIST.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            print(f"Reset ChromaDB store at {CHROMA_PERSIST}")
         svc = RAGService()
         n = svc.ingest_documents()
         print(f"Ingested {n} chunks from {DOCS_DIR}")
     else:
-        print("Usage: python services/rag_service.py --ingest")
+        print("Usage: python services/rag_service.py --ingest [--reset]")
