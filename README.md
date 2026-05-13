@@ -4,10 +4,10 @@
   <a href="https://clinic-ai-patient.vercel.app/patient">
     <img alt="Deployed Site" src="https://img.shields.io/badge/Deployed%20Site-Visit%20MediFlow-00C7D9?style=for-the-badge&logo=vercel&logoColor=white">
   </a>
-  <a href="#">
+  <a href="https://drive.google.com/drive/folders/1mAIbnkcSqYYQkjW_I24x4T52JAKogLd7">
     <img alt="Demo" src="https://img.shields.io/badge/Demo-Watch%20Demo-6C63FF?style=for-the-badge&logo=youtube&logoColor=white">
   </a>
-  <a href="#">
+  <a href="https://drive.google.com/file/d/1PQUhIvW4iUB76KIUwViBKRrlSo7tQEn8/view">
     <img alt="Pitch Deck" src="https://img.shields.io/badge/Pitch%20Deck-View%20Deck-111827?style=for-the-badge&logo=googleslides&logoColor=white">
   </a>
 </p>
