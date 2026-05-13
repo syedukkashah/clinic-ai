@@ -82,6 +82,14 @@ DOCTOR_ID_TO_NAME = {
     11: "Faisal Sheikh",
 }
 
+DEFAULT_DOCTOR_BY_SPECIALTY = {
+    "general": 1,
+    "cardiology": 4,
+    "pediatrics": 6,
+    "dermatology": 8,
+    "orthopedics": 10,
+}
+
 
 # ── AgentResponse ─────────────────────────────────────────────────────────────
 
@@ -188,6 +196,8 @@ def _normalize_specialty(value: Any) -> str:
         "children": "pediatrics",
         "pediatric": "pediatrics",
         "skin": "dermatology",
+        "dermatologist": "dermatology",
+        "dermatologists": "dermatology",
         "bone": "orthopedics",
         "bones": "orthopedics",
         "orthopedic": "orthopedics",
@@ -248,6 +258,18 @@ def _extract_name(message: str) -> Optional[str]:
         if match:
             name = re.split(r"\s+(?:and|,|\.|i have|i want)\b", match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
             return " ".join(part.capitalize() for part in name.strip().split())
+    first_part = message.split(",", 1)[0].strip()
+    blocked = {
+        "book", "appointment", "reschedule", "cancel", "clinic", "doctor", "doctors",
+        "dermatologist", "dermatology", "cardiologist", "cardiology", "pediatrics",
+        "orthopedics", "general", "flu", "fever", "cold", "cough", "pain",
+    }
+    if (
+        2 <= len(first_part) <= 40
+        and re.fullmatch(r"[a-zA-Z][a-zA-Z .'-]*", first_part)
+        and not any(word in first_part.lower().split() for word in blocked)
+    ):
+        return " ".join(part.capitalize() for part in first_part.split())
     return None
 
 
@@ -271,7 +293,16 @@ def _extract_specialty(message: str) -> Optional[str]:
     text = message.lower()
     if any(word in text for word in ("flu", "fever", "cold", "cough", "general practitioner", "gp")):
         return "general"
-    for key in ("cardiology", "cardiologist", "cardiologists", "pediatrics", "dermatology", "orthopedics"):
+    for key in (
+        "cardiology",
+        "cardiologist",
+        "cardiologists",
+        "pediatrics",
+        "dermatology",
+        "dermatologist",
+        "dermatologists",
+        "orthopedics",
+    ):
         if key in text:
             return _normalize_specialty(key)
     return None
@@ -317,6 +348,34 @@ def _extract_date(message: str) -> Optional[str]:
     match = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", message)
     if match:
         return match.group(1)
+    months = {
+        "jan": 1, "january": 1,
+        "feb": 2, "february": 2,
+        "mar": 3, "march": 3,
+        "apr": 4, "april": 4,
+        "may": 5,
+        "jun": 6, "june": 6,
+        "jul": 7, "july": 7,
+        "aug": 8, "august": 8,
+        "sep": 9, "sept": 9, "september": 9,
+        "oct": 10, "october": 10,
+        "nov": 11, "november": 11,
+        "dec": 12, "december": 12,
+    }
+    month_pattern = "|".join(months)
+    natural = re.search(
+        rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_pattern})(?:\s*,?\s*(20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if natural:
+        day = int(natural.group(1))
+        month = months[natural.group(2).lower()]
+        year = int(natural.group(3) or today.year)
+        candidate = datetime(year, month, day).date()
+        if not natural.group(3) and candidate < today:
+            candidate = datetime(year + 1, month, day).date()
+        return candidate.isoformat()
     return None
 
 
@@ -328,6 +387,18 @@ def _extract_complaint(message: str) -> Optional[str]:
     match = re.search(r"\bi have\s+([^.;]+)", message, flags=re.IGNORECASE)
     if match:
         return match.group(1).strip()
+    parts = [
+        part.strip()
+        for part in message.split(",")
+        if part.strip()
+    ]
+    for part in reversed(parts):
+        low = part.lower()
+        if (
+            low in {"general", "routine", "checkup", "check-up", "consultation"}
+            or low.startswith(("general ", "routine "))
+        ):
+            return part
     return None
 
 
@@ -378,6 +449,14 @@ def _next_booking_question(missing: list[str]) -> str:
     return "Please share " + ", ".join(missing[:-1]) + f", and {missing[-1]} so I can confirm the appointment."
 
 
+def _ensure_doctor_for_department(state: Dict[str, Any]) -> Dict[str, Any]:
+    if not state.get("doctor_id") and state.get("specialty"):
+        specialty = _normalize_specialty(state["specialty"])
+        state["doctor_id"] = DEFAULT_DOCTOR_BY_SPECIALTY.get(specialty, 1)
+        state["doctor_name"] = DOCTOR_ID_TO_NAME.get(state["doctor_id"])
+    return state
+
+
 async def _doctor_summary_for_state(state: Dict[str, Any]) -> Optional[str]:
     specialty = state.get("specialty")
     if not specialty:
@@ -425,6 +504,7 @@ async def _handle_booking_state(message: str, session_id: str, redis_client, lan
         )
 
     if previous_state.get("active") and _extract_phone(message) and _missing_booking_fields(state) == []:
+        state = _ensure_doctor_for_department(state)
         args = {
             "patient_name": state["patient_name"],
             "doctor_id": state["doctor_id"],
@@ -441,6 +521,7 @@ async def _handle_booking_state(message: str, session_id: str, redis_client, lan
 
     missing = _missing_booking_fields(state)
     if not missing:
+        state = _ensure_doctor_for_department(state)
         args = {
             "patient_name": state["patient_name"],
             "doctor_id": state.get("doctor_id"),

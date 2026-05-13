@@ -234,6 +234,37 @@ async def test_booking_state_completes_after_contact_number():
 
 
 @pytest.mark.anyio
+async def test_booking_state_accepts_comma_separated_details():
+    """Patient can provide name, department, natural date, time, reason, and phone in one message."""
+    redis = FakeRedis()
+    session_id = "patient-comma-session"
+
+    with patch("agents.booking_agent._create_appointment", AsyncMock(return_value="Appointment confirmed! ID: apt-comma. Date: 2026-06-06 at 16:00.")) as mock_create:
+        first = await process_chat_message(
+            user_id=session_id,
+            message="Book an appointment",
+            redis_client=redis,
+        )
+        assert "full name" in first["response"].lower()
+
+        final = await process_chat_message(
+            user_id=session_id,
+            message="riya, dermatologist, 6th june 2026, 4pm, general, 0321399012",
+            redis_client=redis,
+        )
+
+    assert "Appointment confirmed" in final["response"]
+    args = mock_create.await_args.args[0]
+    assert args["patient_name"] == "Riya"
+    assert args["doctor_id"] == 8
+    assert args["doctor_name"] == "Zara Siddiqui"
+    assert args["date"] == "2026-06-06"
+    assert args["time"] == "16:00"
+    assert args["complaint"] == "general"
+    assert args["contact_number"] == "0321399012"
+
+
+@pytest.mark.anyio
 async def test_process_chat_tool_then_plain(mock_redis, mock_llm_tool_then_plain):
     """Booking requests with missing details ask a safe clarification before LLM tool use."""
     responses = iter(mock_llm_tool_then_plain)
