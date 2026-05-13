@@ -1,124 +1,85 @@
-# Clinic AI (MediFlow) - Production Integration
+# MediFlow
 
-A full-stack, AI-driven clinic operations and patient experience platform.
+<p align="center">
+  <a href="https://clinic-ai-patient.vercel.app/patient">
+    <img alt="Deployed Site" src="https://img.shields.io/badge/Deployed%20Site-Visit%20MediFlow-00C7D9?style=for-the-badge&logo=vercel&logoColor=white">
+  </a>
+  <a href="https://drive.google.com/drive/folders/1mAIbnkcSqYYQkjW_I24x4T52JAKogLd7">
+    <img alt="Demo" src="https://img.shields.io/badge/Demo-Watch%20Demo-6C63FF?style=for-the-badge&logo=youtube&logoColor=white">
+  </a>
+  <a href="https://drive.google.com/file/d/1PQUhIvW4iUB76KIUwViBKRrlSo7tQEn8/view">
+    <img alt="Pitch Deck" src="https://img.shields.io/badge/Pitch%20Deck-View%20Deck-111827?style=for-the-badge&logo=googleslides&logoColor=white">
+  </a>
+</p>
 
-- **Backend**: FastAPI (Python 3.12+) with integrated AI Agents and WebSocket relay.
-- **Frontend**: Vite + TanStack (React) featuring a high-performance Admin Dashboard and Patient Portal.
-- **AI Core**: Multi-provider LLM routing (Gemini 1.5, Groq Llama 3.1, Together AI) with fallback logic.
-- **Voice Stack**: Deepgram Nova-3 / Groq Whisper for STT and Deepgram Aura-2 for TTS.
-- **Database**: PostgreSQL 16 with 10 tables, managed via Alembic migrations.
-- **Real-time**: Redis 7 for session memory and portal-to-portal event broadcasting.
+MediFlow is an AI-powered clinic operations platform that connects patient support, appointment booking, clinical operations, voice automation, predictive analytics, and production monitoring into one integrated system.
 
----
+The project was built as a realistic end-to-end healthcare operations stack: patients can chat or speak with an AI assistant, book appointments, ask clinic questions, and contact support, while clinic staff get an operational dashboard for appointments, scheduling, analytics, alerts, model health, and automation.
 
-## 🚀 Quick Start (Docker Dev)
+## What We Built
 
-The recommended way to run MediFlow is via Docker Compose, which orchestrates all 8 services.
+MediFlow includes a patient-facing AI assistant and an admin-facing clinic operations dashboard backed by a production-ready FastAPI service. The assistant can answer clinic questions through RAG, guide patients through appointment booking, remember conversation context, resolve doctor and specialty intent, check availability, and create bookings in the database.
 
-### 1. Configure Environment
-Create a `.env` file in the root directory:
-```bash
-cp .env.example .env
-```
-Fill in your API keys (Gemini, Groq, Together, Deepgram, Twilio).
+The platform supports both text and voice workflows. Voice requests use speech-to-text, agent reasoning, text-to-speech, and WebSocket streaming so the assistant can behave like a real clinic call agent rather than a static chatbot. A Twilio voice path is also included for phone-call based interactions.
 
-### 2. Launch the Stack
-```bash
-docker compose -f docker-compose.dev.yml up -d --build
-```
+On the admin side, MediFlow provides appointment visibility, scheduling intelligence, operational metrics, alerts, AI operations monitoring, and ML-backed predictions for wait time and patient load. The system is designed around real production concerns: background jobs, service health, observability, migrations, environment separation, deployment automation, and graceful failure handling.
 
-### 3. Access the Portals
-- **Admin Dashboard**: [http://localhost:5173](http://localhost:5173) (Login: `admin@mediflow.io` / `demo`)
-- **Patient Portal**: [http://localhost:5174/patient](http://localhost:5174/patient)
-- **API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+## Core Capabilities
 
----
+- AI appointment booking with structured tool execution and database verification.
+- RAG-based answers for clinic policies, doctor profiles, visiting guidelines, timings, and FAQs.
+- Real-time voice assistant using browser audio streaming, Deepgram STT, LLM reasoning, and TTS playback.
+- Twilio voice webhook support for phone-based clinic assistance.
+- Redis-backed session memory for chat, voice, and booking state.
+- PostgreSQL data layer with Alembic migrations and production-oriented configuration.
+- Admin dashboard for clinic activity, scheduling, analytics, alerts, and operational insight.
+- ML service for wait-time and patient-load prediction.
+- Automated background workers for scheduling checks, prediction resolution, drift detection, retraining, and ops monitoring.
 
-## 🛠️ Advanced Operations
+## AI Architecture
 
-### Rebuilding Specific Components
-If you modify frontend code:
-```bash
-docker compose -f docker-compose.dev.yml up -d --build frontend_admin frontend_patient
-```
-If you modify backend/agent logic:
-```bash
-docker compose -f docker-compose.dev.yml up -d --build backend
-```
+MediFlow uses a multi-agent backend instead of a single prompt-only chatbot. The orchestrator separates informational queries from operational booking tasks, routing each request to the right path.
 
-### Database Migrations
-MediFlow uses Alembic for schema management. To apply new migrations:
-```bash
-docker compose -f docker-compose.dev.yml exec backend alembic upgrade head
-```
+The booking agent uses a guarded ReAct-style workflow with explicit tools for doctor lookup, availability checks, appointment creation, and confirmation. It is designed to avoid fake booking confirmations by verifying database writes before telling the patient an appointment is booked.
 
-### Testing the AI Agents
-You can test the Booking Agent directly from the terminal within the container:
-```bash
-docker compose -f docker-compose.dev.yml exec backend python scripts/debug_agent.py
-```
+The RAG service uses clinic documents indexed into ChromaDB so informational answers are grounded in clinic-specific knowledge rather than generic model output. The voice path shares the same agent logic as chat, keeping behavior consistent across channels.
 
----
+## Tools And Technologies
 
-## 🔒 Security & Best Practices
-- **Secrets**: Never commit `.env` files. They are ignored by `.gitignore`.
-- **Docker Optimization**: `.dockerignore` ensures that local `node_modules` and virtual environments do not bloat the Docker build context.
-- **LLM Fallback**: The `LLM_Router` automatically cycles through providers if rate limits (429) or failures (500) occur.
+- **Frontend:** React, Vite, TanStack Router, TypeScript, Tailwind CSS, shadcn/Radix-style UI primitives.
+- **Backend:** FastAPI, SQLAlchemy, Alembic, Pydantic, async Python services.
+- **Database:** PostgreSQL via Neon-compatible production configuration.
+- **Realtime And Memory:** Redis, WebSockets, browser media APIs.
+- **AI And Voice:** Gemini, Groq, Together/OpenRouter-style LLM routing, Deepgram Nova STT, Deepgram Aura TTS, Groq Whisper fallback, Twilio voice webhooks.
+- **RAG:** ChromaDB, clinic document ingestion, deterministic fallback embeddings for constrained deployment environments.
+- **Background Jobs:** Celery workers and Celery Beat.
+- **ML:** scikit-learn/XGBoost-style pipelines, MLflow tracking and model registry.
+- **Infrastructure:** Docker, Docker Compose, Caddy reverse proxy, AWS EC2, Vercel frontend deployment, GitHub Actions.
 
----
+## DevOps
 
----
+MediFlow was prepared for split free-tier deployment: frontend on Vercel, backend services on EC2, managed PostgreSQL on Neon, Redis inside the backend stack, and optional ML service deployment either alongside the backend or separately.
 
-## 🤖 MediFlow AI Agent (Booking)
+The backend is containerized with Docker Compose and includes separate services for the API, Redis, Celery worker, Celery beat, and optional ML workloads. GitHub Actions deploys the backend automatically on pushes to `main`, pulls the latest code on EC2, rebuilds the stack, runs migrations, refreshes RAG ingestion, and keeps the deployment reproducible.
 
-The platform features a sophisticated, agentic booking system powered by a custom ReAct loop.
+Production hardening includes environment templates, CORS configuration for deployed frontend origins, HTTPS through Caddy, database migration automation, health checks, isolated secrets, and recovery-friendly deployment documentation.
 
-### Capabilities:
-- **Direct Database Access**: Unlike basic chatbots, MediFlow has tools to query availability and write bookings directly to PostgreSQL.
-- **Smart Name Resolution**: Intelligent mapping of doctor names (e.g., "Nadia Hussain") to database IDs across all 11 clinic doctors.
-- **Verification Layer**: A custom verification step prevents the AI from "hallucinating" success; it must confirm a database write before providing an appointment ID.
-- **Multimodal Support**: Identical logic and doctor knowledge are shared across **Chat** and **Voice** interfaces.
+## MLOps
 
-### Doctor Directory:
-- **General Practice**: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
-- **Cardiology**: Dr. Nadia Hussain (4), Dr. Tariq Butt (5)
-- **Pediatrics**: Dr. Ayesha Khan (6), Dr. Bilal Chaudhry (7)
-- **Dermatology**: Dr. Zara Siddiqui (8), Dr. Usman Qureshi (9)
-- **Orthopedics**: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)
+The ML layer predicts operational signals such as clinic wait time and patient load. Predictions are logged, resolved against actual outcomes, monitored for drift, and used to trigger retraining workflows.
 
----
+MLflow is used for experiment tracking, metric logging, model registry behavior, and champion/challenger promotion logic. Celery schedules model maintenance tasks, while retraining and reload endpoints allow the ML service to refresh production models without treating ML as an offline-only notebook workflow.
 
-## 📅 Smart Scheduling Grid
+The result is a practical MLOps loop: prediction, logging, actual-value resolution, drift detection, retraining, model comparison, promotion, and service reload.
 
-The Admin Panel includes a high-performance, real-time scheduling grid (`/scheduling`):
+## AIOps
 
-- **Real-time Sync**: Every appointment booked via the AI Agent appears instantly in the grid.
-- **Robust Time Parsing**: The grid uses a custom regex parser to handle various time formats (HH:MM, AM/PM, etc.) ensuring zero "ghost" appointments.
-- **Load Highlighting**: Columns automatically change color (Green/Yellow/Red) based on the doctor's current patient load for that hour.
-- **Drag-and-Drop**: Easily reschedule appointments by dragging them across cells.
+MediFlow includes an Ops Monitor Agent that acts as the AIOps layer for the clinic stack. It watches operational signals such as API health, Celery worker availability, model drift, booking volume, latency, STT/TTS degradation, and scheduling pressure.
 
----
+The AIOps agent can reason over incidents, classify severity, trigger alerts, suggest schedule adjustments, initiate retraining flows, and detect when critical background infrastructure is down. This turns the system from a passive dashboard into an active operations assistant.
 
-## 🧠 MLOps & MLflow Integration
+## Why It Matters
 
-MediFlow includes a complete, automated Machine Learning pipeline for predicting clinic wait times and patient loads.
+MediFlow is more than a demo chatbot. It combines AI agents, RAG, voice automation, database-backed workflows, production deployment, background automation, MLOps, and AIOps into a single healthcare operations product.
 
-### MLflow UI
-The MLflow Tracking Server and Model Registry are accessible at:
-👉 **[http://localhost:5000](http://localhost:5000)**
-
-### Automated MLOps Lifecycle
-
-1. **Prediction Logging**: The `ml_service` logs every prediction (features and output) to the `ml_predictions` PostgreSQL table.
-2. **Resolver Task**: The `resolve_predictions` Celery beat task runs hourly, matching actual wait times from completed appointments and updating the `ml_predictions` table.
-3. **Drift Detection**: The `drift_detector` Celery task runs daily, calculating KL divergence between recent actuals and a synthetic baseline.
-4. **Triggered Retraining**: If KL Divergence exceeds the threshold (`> 0.1`), the backend triggers the `ml_service` via its `/retrain` endpoint.
-5. **Champion / Challenger**: During retraining, models are evaluated against the current Production model's RMSE/MAE. If the challenger model beats the champion, it is automatically transitioned to the "Production" stage in MLflow.
-6. **Hot Reload**: The `ml_service` `/retrain` endpoint triggers a dynamic reload of the latest Production models without dropping container traffic.
-
-### Celery Schedules
-Scheduled operations are managed via Celery Beat (defined in `backend/celeryconfig.py`):
-- `check-schedule-every-30-min`: Reassigns doctors based on real-time loads.
-- `resolve-predictions-hourly`: Fills in `actual_value` for predictions.
-- `daily-drift-check`: Detects KL divergence.
-- `weekly-retrain-wait-time` / `weekly-retrain-patient-load`: Scheduled retraining runs (Sundays at 2AM/3AM).
+It demonstrates how modern AI systems can move from conversation to action: answering patients, booking appointments, supporting staff, monitoring themselves, and improving operational decisions over time.
