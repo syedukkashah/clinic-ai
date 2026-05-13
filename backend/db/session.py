@@ -9,19 +9,42 @@ from core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # ── Resolve URLs ──────────────────────────────────────────────────────────────
 import os
 _base_url = os.environ.get("TEST_DATABASE_URL", settings.DATABASE_URL)
 
+
+def _rewrite_scheme(url: str, scheme: str) -> str:
+    parsed = urlsplit(url)
+    return urlunsplit((scheme, parsed.netloc, parsed.path, parsed.query, parsed.fragment))
+
+
+def _normalize_query(url: str, *, driver: str) -> str:
+    parsed = urlsplit(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+
+    if driver == "asyncpg":
+        if "sslmode" in query and "ssl" not in query:
+            query["ssl"] = query.pop("sslmode")
+        query.pop("channel_binding", None)
+    else:
+        if "ssl" in query and "sslmode" not in query:
+            query["sslmode"] = query.pop("ssl")
+
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment)
+    )
+
+
 # Async engine for FastAPI routes (uses asyncpg driver)
 if _base_url.startswith("sqlite"):
     ASYNC_URL = _base_url.replace("sqlite://", "sqlite+aiosqlite://")
 else:
-    ASYNC_URL = (
-        _base_url
-        .replace("postgresql+psycopg2://", "postgresql+asyncpg://")
-        .replace("postgresql://", "postgresql+asyncpg://")
+    ASYNC_URL = _normalize_query(
+        _rewrite_scheme(_base_url, "postgresql+asyncpg"),
+        driver="asyncpg",
     )
 async_engine_args = {
     "echo": False,
@@ -40,11 +63,7 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # Sync engine for Alembic migrations only
-SYNC_URL = (
-    _base_url
-    .replace("postgresql+asyncpg://", "postgresql://")
-    .replace("postgresql+psycopg2://", "postgresql://")
-)
+SYNC_URL = _normalize_query(_rewrite_scheme(_base_url, "postgresql"), driver="psycopg2")
 sync_engine_args = {}
 if SYNC_URL.startswith("sqlite"):
     sync_engine_args["connect_args"] = {"check_same_thread": False}
