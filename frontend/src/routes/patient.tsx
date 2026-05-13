@@ -57,17 +57,31 @@ interface Msg {
 
 const QUICK: Record<PatientLang, string[]> = {
   en: ["Book an appointment", "Reschedule", "Clinic hours", "Talk to an agent"],
-  ur: ["مجھے اپوائنٹمنٹ بُک کرنی ہے", "اپوائنٹمنٹ تبدیل کریں", "کلینک اوقات", "ایجنٹ سے بات"],
+  ur: ["اپوائنٹمنٹ بک کریں", "اپوائنٹمنٹ تبدیل کریں", "کلینک اوقات", "ایجنٹ سے بات"],
 };
+
+function getPatientSessionId() {
+  if (typeof window === "undefined") return "patient-ssr";
+  const key = "mediflow_patient_session_id";
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const generated =
+    typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `patient-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  window.localStorage.setItem(key, generated);
+  return generated;
+}
 
 function PatientPage() {
   const portal = getPortal();
+  const sessionIdRef = useRef(getPatientSessionId());
   const [lang, setLang] = useState<PatientLang>("en");
   const [msgs, setMsgs] = useState<Msg[]>([
     {
       id: "m0",
       from: "ai",
-      text: "Hi! I’m MediFlow’s assistant. How can I help you today?",
+      text: "Hi! I'm MediFlow's assistant. How can I help you today?",
       time: "now",
     },
   ]);
@@ -100,7 +114,7 @@ function PatientPage() {
         from: "ai",
         text:
           l === "en"
-            ? "Hi! I’m MediFlow’s assistant. How can I help you today?"
+            ? "Hi! I'm MediFlow's assistant. How can I help you today?"
             : "السلام علیکم! میں آپ کی کیا مدد کر سکتا ہوں؟",
         time: "now",
       },
@@ -109,12 +123,17 @@ function PatientPage() {
 
   const sendUser = async (text: string) => {
     if (!text.trim()) return;
+    if (text === "Talk to an agent" || text === "ایجنٹ سے بات") {
+      setContactOpen(true);
+      setContactMessage("");
+      return;
+    }
     const userMsg: Msg = { id: `u${Date.now()}`, from: "user", text, time: "now" };
     setMsgs((p) => [...p, userMsg]);
     setInput("");
     try {
       setSending(true);
-      const res = await sendPatientMessage({ userId: "anon", lang, message: text });
+      const res = await sendPatientMessage({ userId: sessionIdRef.current, lang, message: text });
       setMsgs((p) => [
         ...p,
         { id: `a${Date.now()}`, from: "ai", text: res.responseText, time: "now" },
@@ -167,7 +186,7 @@ function PatientPage() {
     try {
       setSending(true);
       const data = await processPatientVoice({
-        userId: "anon",
+        userId: sessionIdRef.current,
         lang,
         audioData: audioBlob,
       });
@@ -411,7 +430,7 @@ function PatientPage() {
                 <h3 className="font-display font-bold text-lg">Voice Assistant</h3>
               </div>
               <p className="text-sm text-muted-foreground mb-6">
-                Tap the mic to simulate a call transcript
+                Tap the mic to speak
               </p>
 
               <div className="flex-1 flex flex-col items-center justify-center gap-6">

@@ -75,28 +75,39 @@ class AgentResponse:
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
-SYSTEM_TEXT = """You are MediFlow, the official AI Booking Agent for the clinic. 
-You have DIRECT ACCESS to the clinic's database through tools. 
+SYSTEM_TEXT = """You are MediFlow, the official AI Booking Agent for the clinic.
+Your patient-facing replies must always be warm, concise plain text. Never show JSON, tool names, or internal implementation details to the patient.
 
-### YOUR CLINIC KNOWLEDGE (Doctor IDs):
-- **General Practice**: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
-- **Cardiology**: Dr. Nadia Hussain (4), Dr. Tariq Butt (5)
-- **Pediatrics**: Dr. Ayesha Khan (6), Dr. Bilal Chaudhry (7)
-- **Dermatology**: Dr. Zara Siddiqui (8), Dr. Usman Qureshi (9)
-- **Orthopedics**: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)` 
+### Clinic doctors
+- General Practice: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
+- Cardiology: Dr. Nadia Hussain (4), Dr. Tariq Butt (5)
+- Pediatrics: Dr. Ayesha Khan (6), Dr. Bilal Chaudhry (7)
+- Dermatology: Dr. Zara Siddiqui (8), Dr. Usman Qureshi (9)
+- Orthopedics: Dr. Hina Javed (10), Dr. Faisal Sheikh (11)
 
-### HOW TO OPERATE:
-1. **TOOL FORMAT**: You MUST respond with a JSON object in this EXACT format:
-   `{"tool": "tool_name", "args": {"param": "value"}}`
-2. **NO NARRATION**: Go DIRECTLY to the tool call.
-3. **MANDATORY**: NEVER tell the patient to "contact the website" or "call reception".
-4. **FINAL RESPONSE**: Only provide plain text confirmation AFTER you have called `create_appointment`.
+### Available internal tools
+Use tools only when useful, in this exact JSON format:
+{"tool": "tool_name", "args": {"param": "value"}}
+
+- list_doctors: {"tool": "list_doctors", "args": {"specialty": "cardiology"}}
+- get_available_slots: {"tool": "get_available_slots", "args": {"specialty": "general"}}
+- get_doctor_profile: {"tool": "get_doctor_profile", "args": {"doctor_id": 1}}
+- get_clinic_timings: {"tool": "get_clinic_timings", "args": {}}
+- create_appointment: {"tool": "create_appointment", "args": {"patient_name": "...", "doctor_id": 1, "date": "YYYY-MM-DD", "time": "HH:MM", "complaint": "..."}}
+- cancel_appointment: {"tool": "cancel_appointment", "args": {"appointment_id": "..."}}
+- reschedule_appointment: {"tool": "reschedule_appointment", "args": {"appointment_id": "...", "date": "YYYY-MM-DD", "time": "HH:MM"}}
+
+### Booking rules
+- If the patient wants to book, do not create an appointment until you have their name, doctor or specialty, date, time, and reason.
+- If any required booking detail is missing, ask one short clarifying question instead of calling create_appointment.
+- After a tool result, summarize it in plain text for the patient.
+- For clinic hours, policies, general doctor information, or FAQ-style questions, answer naturally and do not invent unavailable data.
 """
 
 # Voice prompt: same tool list as SYSTEM_TEXT but with the 2-sentence constraint
 # enforced to keep TTS synthesis under 1.2s (part of the 4-8s voice latency budget).
 PROMPT_VOICE = """You are MediFlow, the clinic's voice assistant. 
-You handle live calls to book appointments. You have direct database tools.
+You handle live calls to book appointments and answer simple scheduling questions. Patient-facing replies must be plain spoken text. Never speak JSON, tool names, markdown, or internal details.
 
 ### YOUR CLINIC KNOWLEDGE (Doctor IDs):
 - **General**: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
@@ -108,13 +119,17 @@ You handle live calls to book appointments. You have direct database tools.
 ### VOICE CONSTRAINTS:
 - Keep conversational responses to MAX 2 SENTENCES.
 - No markdown, no asterisks, no bullet points. Plain spoken text only.
-- NEVER say "I will check" or "Let me find that". Just use the tool.
+- If booking details are missing, ask one concise question for the next missing detail.
+- Do not create an appointment until you have the patient's name, doctor or specialty, date, time, and reason.
+- After a tool result, summarize it naturally for the caller.
 - If the caller speaks Urdu, reply in Urdu.
 
 ### TOOLS:
+- list_doctors: {"tool": "list_doctors", "args": {"specialty": "cardiology"}}
 - get_available_slots: {"tool": "get_available_slots", "args": {"specialty": "general"}}
 - get_doctor_profile: {"tool": "get_doctor_profile", "args": {"doctor_id": 1}}
-- create_appointment: {"tool": "create_appointment", "args": {"patient_id": "...", "patient_name": "...", "doctor_id": 1, "complaint": "...", "urgency": "ROUTINE", "time": "14:30"}}
+- get_clinic_timings: {"tool": "get_clinic_timings", "args": {}}
+- create_appointment: {"tool": "create_appointment", "args": {"patient_name": "...", "doctor_id": 1, "date": "YYYY-MM-DD", "time": "HH:MM", "complaint": "..."}}
 - cancel_appointment: {"tool": "cancel_appointment", "args": {"appointment_id": "..."}}
 """
 
@@ -124,10 +139,46 @@ SYSTEM_VOICE = PROMPT_VOICE
 PROMPT_TEXT = SYSTEM_TEXT
 
 
+def _normalize_specialty(value: Any) -> str:
+    specialty = str(value or "general").strip().lower()
+    aliases = {
+        "cardiologist": "cardiology",
+        "cardiologists": "cardiology",
+        "heart": "cardiology",
+        "child": "pediatrics",
+        "children": "pediatrics",
+        "pediatric": "pediatrics",
+        "skin": "dermatology",
+        "bone": "orthopedics",
+        "bones": "orthopedics",
+        "orthopedic": "orthopedics",
+        "general practice": "general",
+        "general medicine": "general",
+    }
+    return aliases.get(specialty, specialty)
+
+
+def _normalize_tool_args(tool_name: str, args: Dict) -> Dict:
+    normalized = dict(args or {})
+    if "specialization" in normalized and "specialty" not in normalized:
+        normalized["specialty"] = normalized["specialization"]
+    if "department" in normalized and "specialty" not in normalized:
+        normalized["specialty"] = normalized["department"]
+    if "appointment_date" in normalized and "date" not in normalized:
+        normalized["date"] = normalized["appointment_date"]
+    if "appointment_time" in normalized and "time" not in normalized:
+        normalized["time"] = normalized["appointment_time"]
+    if "reason" in normalized and "complaint" not in normalized:
+        normalized["complaint"] = normalized["reason"]
+    if tool_name in {"list_doctors", "get_available_slots"}:
+        normalized["specialty"] = _normalize_specialty(normalized.get("specialty"))
+    return normalized
+
+
 # ── Tool implementations (Ibrahim — do not modify) ────────────────────────────
 
 async def _get_available_slots(args: Dict) -> str:
-    specialty = args.get("specialty", "general")
+    specialty = _normalize_specialty(args.get("specialty", "general"))
     async with AsyncSessionLocal() as db:
         doctors = await crud.get_doctors(db)
         matching = [d for d in doctors if specialty.lower() in d.get("specialty", "").lower()]
@@ -146,6 +197,32 @@ async def _get_available_slots(args: Dict) -> str:
                 )
                 
     return "\n".join(result) if result else f"No available slots for {specialty} right now."
+
+
+async def _list_doctors(args: Dict) -> str:
+    specialty = _normalize_specialty(args.get("specialty", ""))
+    async with AsyncSessionLocal() as db:
+        doctors = await crud.get_doctors(db)
+
+    matching = doctors
+    if specialty:
+        matching = [d for d in doctors if specialty in d.get("specialty", "").lower()]
+
+    if not matching:
+        return f"I could not find doctors for {specialty}. Available departments are General Practice, Cardiology, Pediatrics, Dermatology, and Orthopedics."
+
+    lines = [
+        f"Dr. {doc['name']} (ID {doc['id']}), {doc.get('specialty', 'General Practice')}"
+        for doc in matching[:8]
+    ]
+    return "Available doctors:\n" + "\n".join(lines)
+
+
+async def _get_clinic_timings(args: Dict) -> str:
+    return (
+        "Clinic hours are Monday to Friday, 9:00 AM to 5:00 PM. "
+        "For urgent symptoms or emergencies, please seek emergency care immediately."
+    )
 
 
 async def _get_doctor_profile(args: Dict) -> str:
@@ -188,10 +265,28 @@ async def _predict_wait_time(args: Dict) -> str:
 
 
 async def _create_appointment(args: Dict) -> str:
+    args = _normalize_tool_args("create_appointment", args)
     patient_id = args.get("patient_id")
-    patient_name = args.get("patient_name", "Demo Patient")
+    patient_name = str(args.get("patient_name") or "").strip()
     doctor_name = args.get("doctor_name", "")
     doctor_id = args.get("doctor_id")
+    date_value = str(args.get("date") or "").strip()
+    time_value = str(args.get("time") or "").strip()
+    complaint = str(args.get("complaint") or "").strip()
+
+    missing = []
+    if not patient_name:
+        missing.append("your full name")
+    if not doctor_id and not doctor_name:
+        missing.append("which doctor or department you prefer")
+    if not date_value:
+        missing.append("appointment date")
+    if not time_value:
+        missing.append("appointment time")
+    if not complaint:
+        missing.append("reason for visit")
+    if missing:
+        return "I can book that for you. Please share " + ", ".join(missing) + "."
 
     # Smart Name Resolution for all 11 doctors
     name_to_id = {
@@ -208,7 +303,6 @@ async def _create_appointment(args: Dict) -> str:
     
     doctor_id = int(doctor_id or 1)
     
-    # Ensure we have a valid patient_id (fallback to a stable one for demo if missing)
     if not patient_id:
         patient_id = f"pat-{uuid.uuid4().hex[:8]}"
 
@@ -218,9 +312,9 @@ async def _create_appointment(args: Dict) -> str:
         "doctorId": doctor_id,
         "doctorName": args.get("doctor_name", ""),
         "slotId": None, # Ignore slot_id for now as the slots table is empty in demo data
-        "time": args.get("time", "09:00").split()[0].zfill(5) if ":" in args.get("time", "") else "09:00",
-        "date": args.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-        "reason": args.get("complaint", "General consultation"),
+        "time": time_value.split()[0].zfill(5) if ":" in time_value else time_value,
+        "date": date_value,
+        "reason": complaint,
         "urgency": args.get("urgency", "ROUTINE").lower(),
         "status": "Confirmed",
         "booking_channel": args.get("booking_channel"),
@@ -270,7 +364,9 @@ async def _reschedule_appointment(args: Dict) -> str:
 
 
 TOOL_MAP = {
+    "list_doctors": _list_doctors,
     "get_available_slots":   _get_available_slots,
+    "get_clinic_timings": _get_clinic_timings,
     "get_doctor_profile":    _get_doctor_profile,
     "check_patient_history": _check_patient_history,
     "predict_wait_time":     _predict_wait_time,
@@ -292,21 +388,42 @@ def _parse_tool_call(text: str) -> Optional[Dict]:
         
         # Explicit tool call format (standard)
         if "tool" in obj and obj["tool"] in TOOL_MAP:
-            return obj
+            tool_name = obj["tool"]
+            return {"tool": tool_name, "args": _normalize_tool_args(tool_name, obj.get("args", {}))}
             
         # Alternative format (used by some models)
         if "name" in obj and obj["name"] in TOOL_MAP:
-            return {"tool": obj["name"], "args": obj.get("arguments", obj.get("args", {}))}
+            tool_name = obj["name"]
+            raw_args = obj.get("arguments", obj.get("args", {}))
+            return {"tool": tool_name, "args": _normalize_tool_args(tool_name, raw_args)}
             
         # Recovery: if they sent raw args for create_appointment without the "tool" wrapper
         if "patient_id" in obj or "patient_name" in obj:
-            return {"tool": "create_appointment", "args": obj}
-        if "specialty" in obj:
-            return {"tool": "get_available_slots", "args": obj}
+            return {"tool": "create_appointment", "args": _normalize_tool_args("create_appointment", obj)}
+        if "specialty" in obj or "specialization" in obj:
+            return {"tool": "get_available_slots", "args": _normalize_tool_args("get_available_slots", obj)}
             
     except (ValueError, json.JSONDecodeError):
         pass
     return None
+
+
+def _contains_unhandled_tool_json(text: str) -> bool:
+    try:
+        start = text.index("{")
+        end = text.rindex("}") + 1
+        obj = json.loads(text[start:end])
+    except (ValueError, json.JSONDecodeError):
+        return False
+    return isinstance(obj, dict) and ("tool" in obj or "name" in obj)
+
+
+def _safe_patient_response(text: str, language: str = "en") -> str:
+    if _contains_unhandled_tool_json(text):
+        if language == "ur":
+            return "معذرت، میں ابھی یہ درخواست مکمل نہیں کر سکا۔ براہ کرم اپنی درخواست تھوڑی مزید وضاحت سے لکھیں۔"
+        return "I can help with that, but I need a little more detail. Please tell me what you would like to do next."
+    return text
 
 
 async def _run_react_loop(
@@ -345,17 +462,20 @@ async def _run_react_loop(
         tool_call = _parse_tool_call(response_text)
 
         if tool_call is None:
+            if _contains_unhandled_tool_json(response_text):
+                logger.warning("BookingAgent: suppressed unhandled tool JSON: %s", response_text)
+                return _safe_patient_response(response_text, language)
             # If the model is narrating instead of calling a tool, nudge it once.
             if any(kw in response_text.lower() for kw in ("check", "find", "looking", "let me")):
                 logger.info("BookingAgent: Nudging model to use tool instead of narrating")
                 messages.append({"role": "assistant", "content": response_text})
                 messages.append({"role": "user", "content": "Please provide the tool call in JSON format now. Do not narrate."})
                 continue
-            return response_text
+            return _safe_patient_response(response_text, language)
 
         # Execute tool
         tool_name = tool_call["tool"]
-        tool_args = tool_call.get("args", {})
+        tool_args = _normalize_tool_args(tool_name, tool_call.get("args", {}))
 
         # Context injection: tagging channel for Activity Feed
         if tool_name == "create_appointment":
@@ -394,12 +514,12 @@ async def _run_react_loop(
                     messages.append({"role": "assistant", "content": response_text})
                     messages.append({"role": "user", "content": f"[Tool result: {t_name}]\n{t_res}"})
                     final_resp = await llm_router.call(messages=messages, task_type=task_type, system=system)
-                    return final_resp.text.strip()
-                return response_text
+                    return _safe_patient_response(final_resp.text.strip(), language)
+                return _safe_patient_response(response_text, language)
             except Exception:
                 pass
 
-    return response_text
+    return _safe_patient_response(response_text, language)
 
 
 # ── BookingAgent class (for AgentOrchestrator and voice pipeline) ─────────────

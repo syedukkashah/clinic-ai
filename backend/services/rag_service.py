@@ -245,16 +245,18 @@ class RAGService:
             else "Respond in English."
         )
 
-        # Voice responses must be short (max 2 sentences) for TTS latency budgets, with NO markdown.
+        # Voice responses must be short for TTS latency budgets, with no markdown.
         if mode == "voice":
             sentence_constraint = "Respond in maximum 2 sentences. DO NOT use markdown, bullet points, or special formatting. Use plain conversational language."
         else:
-            sentence_constraint = "Keep your response to 2 to 4 sentences. You may use simple markdown formatting."
+            sentence_constraint = "Keep your response to 1 to 3 short sentences. Do not use markdown, bullet points, JSON, code blocks, or special formatting."
 
         prompt = f"""You are a professional MediFlow clinic assistant.
-Your ONLY source of information is the provided CONTEXT. 
-If the CONTEXT does not contain the exact answer, you MUST say: "I don't have that specific information. Please call 0800-MEDIFLOW." Do not guess or hallucinate.
-{sentence_constraint} Be friendly, empathetic, and clear.
+Your only source of information is the provided CONTEXT.
+If the CONTEXT does not contain the exact answer, say: "I don't have that specific information. Please call 0800-MEDIFLOW."
+Do not guess, invent policies, expose sources, mention chunks, or mention the retrieval system.
+{sentence_constraint}
+Be friendly, empathetic, and clear. Answer the patient's question directly first.
 {lang_instruction}
 
 --- CONTEXT ---
@@ -268,8 +270,8 @@ ANSWER:"""
         try:
             resp = await llm_router.call(
                 messages=[{"role": "user", "content": prompt}],
-                system="You are a helpful clinic information assistant. Answer only from the provided context.",
-                task_type="urdu" if language == "ur" else "reasoning",
+                system="You are a helpful clinic information assistant. Return only the final patient-facing answer in plain text.",
+                task_type="urdu" if language == "ur" else "rag",
             )
             answer = resp.text if resp and resp.text else None
         except Exception as e:

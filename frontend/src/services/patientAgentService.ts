@@ -98,9 +98,9 @@ export async function sendPatientMessage(
     const response = await api.post("/chat/message", {
       userId: input.userId || "anonymous",
       message: input.message,
+      lang: input.lang,
     });
-    // The backend returns { response: "..." }, but frontend expects { responseText: "..." }
-    return { responseText: response.data.response };
+    return { responseText: response.data.responseText || response.data.response };
   } catch (error) {
     console.error("Failed to send patient message:", error);
     return {

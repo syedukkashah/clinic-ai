@@ -34,6 +34,21 @@ def test_parse_tool_call_unknown_tool():
     assert result is None
 
 
+def test_parse_tool_call_normalizes_aliases():
+    text = '{"tool": "list_doctors", "args": {"specialization": "Cardiologists"}}'
+    result = _parse_tool_call(text)
+    assert result is not None
+    assert result["tool"] == "list_doctors"
+    assert result["args"]["specialty"] == "cardiology"
+
+
+def test_voice_prompt_has_patient_facing_guardrails():
+    from agents.booking_agent import PROMPT_VOICE
+
+    assert "Never speak JSON" in PROMPT_VOICE
+    assert "Do not create an appointment until" in PROMPT_VOICE
+
+
 def test_parse_tool_call_invalid_json():
     text = '{"tool": "get_available_slots", "args": {invalid}}'
     result = _parse_tool_call(text)
@@ -134,6 +149,34 @@ async def test_process_chat_no_redis(mock_llm_plain_response):
             redis_client=None,
         )
     assert result["response"] == "How can I help you today?"
+
+
+@pytest.mark.anyio
+async def test_process_chat_suppresses_unknown_tool_json(mock_redis):
+    """Unknown model tool calls must never leak raw JSON to patients."""
+    mock_response = MagicMock()
+    mock_response.text = '{"tool": "unknown_tool", "args": {}}'
+    with patch("agents.booking_agent.llm_router") as mock_router:
+        mock_router.call = AsyncMock(return_value=mock_response)
+        result = await process_chat_message(
+            user_id="test-user",
+            message="clinic timings",
+            redis_client=mock_redis,
+        )
+    assert '{"tool"' not in result["response"]
+    assert "more detail" in result["response"].lower()
+
+
+@pytest.mark.anyio
+async def test_create_appointment_requires_missing_details():
+    """The tool must ask for missing patient details instead of creating fake appointments."""
+    result = await _create_appointment({
+        "doctor_id": 1,
+        "appointment_date": "2026-05-13",
+        "appointment_time": "09:00",
+        "reason": "General Check-up",
+    })
+    assert "full name" in result.lower()
 
 
 @pytest.mark.anyio
