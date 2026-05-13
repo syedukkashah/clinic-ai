@@ -89,11 +89,6 @@ async def incoming_call(request: Request):
     resp = VoiceResponse()
     gather = _gather(f"/api/twilio/process?session_id={session_id}")
     gather.say(
-        "میڈی فلو میں خوش آمدید۔ میں آپ کی کیسے مدد کر سکتا ہوں؟",
-        language="ur-PK",
-    )
-    gather = _gather(f"/api/twilio/process?session_id={session_id}")
-    gather.say(
         "Welcome to MediFlow. I can help with appointments, clinic timings, or doctor availability. How can I help today?",
         language="en-US",
     )

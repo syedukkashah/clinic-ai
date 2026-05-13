@@ -216,7 +216,9 @@ function PatientPage() {
   };
 
   const endVoiceCall = (closeDialog = true) => {
-    callRecorderRef.current?.stop();
+    if (callRecorderRef.current && callRecorderRef.current.state !== "inactive") {
+      callRecorderRef.current.stop();
+    }
     callRecorderRef.current = null;
     callStreamRef.current?.getTracks().forEach((track) => track.stop());
     callStreamRef.current = null;
@@ -258,19 +260,21 @@ function PatientPage() {
         };
 
         recorder.start(250);
-        setCallState({
-          status: "connected",
-          callId: sessionIdRef.current,
-          greeting:
-            lang === "ur"
-              ? "Call connected. Please speak now."
-              : "Call connected. You can speak naturally now.",
-        });
       };
 
       ws.onmessage = async (event) => {
         if (typeof event.data === "string") {
           const payload = JSON.parse(event.data);
+          if (payload.type === "status" && payload.text === "connected") {
+            setCallState({
+              status: "connected",
+              callId: sessionIdRef.current,
+              greeting:
+                lang === "ur"
+                  ? "Call connected. Please speak now."
+                  : "Call connected. You can speak naturally now.",
+            });
+          }
           if (payload.type === "partial") {
             setCallTranscript(payload.text || "");
           }
@@ -307,7 +311,9 @@ function PatientPage() {
 
       ws.onclose = () => {
         callWsRef.current = null;
-        callRecorderRef.current?.stop();
+        if (callRecorderRef.current && callRecorderRef.current.state !== "inactive") {
+          callRecorderRef.current.stop();
+        }
         callRecorderRef.current = null;
         callStreamRef.current?.getTracks().forEach((track) => track.stop());
         callStreamRef.current = null;
@@ -318,29 +324,6 @@ function PatientPage() {
       toast.error(lang === "ur" ? "Microphone access denied" : "Microphone access denied");
     }
   };
-
-  useEffect(() => {
-    if (!callOpen) {
-      setCallState({ status: "idle" });
-      return;
-    }
-    setCallState({ status: "connecting" });
-    (async () => {
-      try {
-        setCallState({
-          status: "connected",
-          greeting:
-            lang === "ur"
-              ? "Call connected. Please speak now."
-              : "Call connected. You can speak naturally now.",
-          callId: sessionIdRef.current,
-        });
-      } catch {
-        setCallOpen(false);
-        toast.error(lang === "ur" ? "کال شروع نہیں ہو سکی" : "Unable to start call");
-      }
-    })();
-  }, [callOpen, lang]);
 
   useEffect(() => () => endVoiceCall(false), []);
 

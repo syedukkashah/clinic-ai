@@ -47,7 +47,6 @@ async def ws_voice(ws: WebSocket, session_id: str):
     """
     await ws.accept()
     logger.info("WebRTC WS connected — session=%s", session_id)
-    await ws.send_json({"type": "status", "text": "connected"})
 
     dg_connection = None
     final_lang = "en"
@@ -121,6 +120,8 @@ async def ws_voice(ws: WebSocket, session_id: str):
             })
             await ws.close()
             return
+
+        await ws.send_json({"type": "status", "text": "connected"})
 
         # Main loop: pipe browser audio chunks to Deepgram
         while True:
