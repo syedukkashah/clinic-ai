@@ -220,6 +220,9 @@ async def create_deepgram_stream(on_transcript: Callable) -> Any:
     """
     from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
+    if not DEEPGRAM_API_KEY:
+        raise RuntimeError("DEEPGRAM_API_KEY is required for live voice calls")
+
     dg = DeepgramClient(DEEPGRAM_API_KEY)
     connection = dg.listen.asyncwebsocket.v("1")
 
@@ -239,6 +242,9 @@ async def create_deepgram_stream(on_transcript: Callable) -> Any:
     options = LiveOptions(
         model="nova-3",
         language="multi",
+        encoding="opus",
+        sample_rate=48000,
+        channels=1,
         smart_format=True,
         punctuate=True,
         interim_results=True,

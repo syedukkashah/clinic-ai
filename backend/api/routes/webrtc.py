@@ -73,8 +73,9 @@ async def ws_voice(ws: WebSocket, session_id: str):
                 })
 
                 # Agent
+                redis = getattr(ws.app.state, "redis", None)
                 response = await orchestrator.handle_booking(
-                    sentence, session_id, lang, mode="voice"
+                    sentence, session_id, lang, mode="voice", redis=redis
                 )
 
                 # TTS
@@ -119,6 +120,8 @@ async def ws_voice(ws: WebSocket, session_id: str):
             })
             await ws.close()
             return
+
+        await ws.send_json({"type": "status", "text": "connected"})
 
         # Main loop: pipe browser audio chunks to Deepgram
         while True:

@@ -92,7 +92,7 @@ async def test_voice_request_routes_to_booking_agent_for_operational():
     )
     
     with patch("services.stt_service.transcribe_file", AsyncMock(return_value=mock_stt_result)), \
-         patch("services.intent_router.route_intent", AsyncMock(return_value="OPERATIONAL")), \
+         patch("agents.orchestrator.route_intent", AsyncMock(return_value="OPERATIONAL")), \
          patch("agents.orchestrator.booking_agent.run", AsyncMock(return_value=mock_agent_resp)), \
          patch("services.tts_service.synthesize", AsyncMock()):
         
