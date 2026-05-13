@@ -49,7 +49,10 @@ import { api } from "@/lib/api";
 export function getVoiceCallWsUrl({ sessionId }: VoiceCallSocketConfig) {
   const explicit = import.meta.env.VITE_VOICE_WS_URL;
   if (explicit) {
-    return explicit.replace("{sessionId}", encodeURIComponent(sessionId));
+    if (explicit.includes("{sessionId}")) {
+      return explicit.replace("{sessionId}", encodeURIComponent(sessionId));
+    }
+    return `${explicit.replace(/\/$/, "")}/${encodeURIComponent(sessionId)}`;
   }
 
   const apiBase = api.defaults.baseURL || "/api";

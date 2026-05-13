@@ -99,6 +99,8 @@ function PatientPage() {
   }>({ status: "idle" });
   const [callTranscript, setCallTranscript] = useState("");
   const [callReply, setCallReply] = useState("");
+  const [callError, setCallError] = useState("");
+  const [callWsUrl, setCallWsUrl] = useState("");
   const callWsRef = useRef<WebSocket | null>(null);
   const callRecorderRef = useRef<MediaRecorder | null>(null);
   const callStreamRef = useRef<MediaStream | null>(null);
@@ -215,7 +217,7 @@ function PatientPage() {
     }
   };
 
-  const endVoiceCall = (closeDialog = true) => {
+  const endVoiceCall = (closeDialog = true, clearDetails = true) => {
     if (callRecorderRef.current && callRecorderRef.current.state !== "inactive") {
       callRecorderRef.current.stop();
     }
@@ -225,8 +227,12 @@ function PatientPage() {
     callWsRef.current?.close();
     callWsRef.current = null;
     setCallState({ status: "idle" });
-    setCallTranscript("");
-    setCallReply("");
+    if (clearDetails) {
+      setCallTranscript("");
+      setCallReply("");
+      setCallError("");
+      setCallWsUrl("");
+    }
     if (closeDialog) setCallOpen(false);
   };
 
@@ -237,12 +243,15 @@ function PatientPage() {
     setCallState({ status: "connecting" });
     setCallTranscript("");
     setCallReply("");
+    setCallError("");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       callStreamRef.current = stream;
 
-      const ws = new WebSocket(getVoiceCallWsUrl({ sessionId: sessionIdRef.current }));
+      const wsUrl = getVoiceCallWsUrl({ sessionId: sessionIdRef.current });
+      setCallWsUrl(wsUrl);
+      const ws = new WebSocket(wsUrl);
       callWsRef.current = ws;
       ws.binaryType = "blob";
 
@@ -290,7 +299,9 @@ function PatientPage() {
             ]);
           }
           if (payload.type === "error") {
-            toast.error(payload.text || "Voice call failed");
+            const message = payload.text || "Voice call failed";
+            setCallError(message);
+            toast.error(message);
           }
           return;
         }
@@ -305,8 +316,10 @@ function PatientPage() {
       };
 
       ws.onerror = () => {
-        toast.error("Call connection failed");
-        endVoiceCall(false);
+        const message = "Call connection failed. Check the voice WebSocket URL, HTTPS, and backend logs.";
+        setCallError(message);
+        toast.error(message);
+        endVoiceCall(false, false);
       };
 
       ws.onclose = () => {
@@ -319,9 +332,11 @@ function PatientPage() {
         callStreamRef.current = null;
       };
     } catch {
-      endVoiceCall(false);
+      const message = "Microphone access denied or unsupported in this browser.";
+      endVoiceCall(false, false);
+      setCallError(message);
       setCallOpen(false);
-      toast.error(lang === "ur" ? "Microphone access denied" : "Microphone access denied");
+      toast.error(lang === "ur" ? message : message);
     }
   };
 
@@ -652,6 +667,16 @@ function PatientPage() {
             )}
             {callState.callId && (
               <div className="text-xs text-muted-foreground">{callState.callId}</div>
+            )}
+            {callError && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                {callError}
+              </div>
+            )}
+            {callWsUrl && (
+              <div className="break-all text-[11px] text-muted-foreground">
+                {callWsUrl}
+              </div>
             )}
             <div className="space-y-1.5">
               <div className="text-xs text-muted-foreground">You said</div>
