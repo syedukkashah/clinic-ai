@@ -13,6 +13,8 @@ import sys
 import time
 import logging
 import shutil
+import asyncio
+import re
 from pathlib import Path
 
 import chromadb
@@ -29,6 +31,15 @@ CHUNK_SIZE = 400
 CHUNK_OVERLAP = 80
 TOP_K = 3
 EMBEDDING_DIMENSIONS = 384
+RAG_LLM_TIMEOUT_SECONDS = float(os.getenv("RAG_LLM_TIMEOUT_SECONDS", "8"))
+
+STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "before", "bring", "can",
+    "do", "does", "for", "from", "have", "how", "i", "in", "is", "it",
+    "me", "my", "of", "on", "or", "our", "please", "should", "the",
+    "there", "to", "what", "when", "where", "which", "who", "with", "you",
+    "your",
+}
 
 PROM_RAG_QUERIES = Counter(
     "mediflow_rag_queries_total", "RAG query count", ["language"]
@@ -41,6 +52,32 @@ PROM_RAG_LATENCY = Histogram(
 PROM_RAG_EMPTY = Counter(
     "mediflow_rag_empty_results_total", "RAG queries returning no chunks"
 )
+PROM_RAG_FALLBACK = Counter(
+    "mediflow_rag_fallback_total", "RAG fallback usage", ["reason"]
+)
+
+
+def _tokens(text: str) -> set[str]:
+    words = re.findall(r"[a-zA-Z0-9]+|[\u0600-\u06FF]+", (text or "").lower())
+    return {word for word in words if len(word) > 2 and word not in STOPWORDS}
+
+
+def _clean_line(line: str) -> str:
+    return re.sub(r"\s+", " ", line.strip().lstrip("- ").strip())
+
+
+def _limit_sentences(text: str, max_sentences: int) -> str:
+    pieces = re.split(r"(?<=[.!?])\s+", text.strip())
+    pieces = [piece.strip() for piece in pieces if piece.strip()]
+    return " ".join(pieces[:max_sentences]) if pieces else text.strip()
+
+
+def _plain_text_answer(answer: str, mode: str) -> str:
+    cleaned = re.sub(r"[*_`#>\[\]]", "", answer or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if mode == "voice":
+        return _limit_sentences(cleaned, 2)
+    return _limit_sentences(cleaned, 3)
 
 
 class LocalHashEmbeddingFunction:
@@ -105,6 +142,7 @@ class RAGService:
         self._client = None
         self._collection = None
         self._embed_fn = None
+        self._doc_chunks = None
 
     def _init_client(self) -> None:
         """Lazy-initialize ChromaDB client and embedding function."""
@@ -142,7 +180,11 @@ class RAGService:
         Safe to call multiple times.
         """
         self._init_client()
-        count = self._collection.count()
+        try:
+            count = self._collection.count()
+        except Exception as exc:
+            logger.warning("RAG: collection count failed, rebuilding: %s", exc)
+            count = 0
         if count == 0:
             logger.info("RAG: collection empty, auto-ingesting clinic documents...")
             n = self.ingest_documents()
@@ -180,12 +222,20 @@ class RAGService:
             return 0
 
         for doc_file in doc_files:
-            text = doc_file.read_text(encoding="utf-8")
+            try:
+                text = doc_file.read_text(encoding="utf-8")
+            except Exception as exc:
+                logger.warning("RAG: skipping unreadable doc %s: %s", doc_file, exc)
+                continue
             for chunk in _chunk_text(text, doc_file.stem):
                 all_ids.append(chunk["id"])
                 all_docs.append(chunk["text"])
                 all_metas.append({"source": chunk["source"]})
             logger.info(f"RAG: chunked {doc_file.name}")
+
+        if not all_ids:
+            logger.error("RAG: no chunks produced from clinic documents")
+            return 0
 
         # Batch upsert
         batch_size = 100
@@ -197,7 +247,160 @@ class RAGService:
             )
 
         logger.info(f"RAG: ingested {len(all_ids)} chunks from {len(doc_files)} files")
+        self._doc_chunks = None
         return len(all_ids)
+
+    def _load_document_chunks(self) -> list[dict]:
+        """Load and cache text chunks directly from clinic docs for fallback retrieval."""
+        cached = getattr(self, "_doc_chunks", None)
+        if cached is not None:
+            return cached
+
+        chunks: list[dict] = []
+        if not DOCS_DIR.exists():
+            logger.error("RAG: DOCS_DIR not found for lexical fallback at %s", DOCS_DIR)
+            self._doc_chunks = []
+            return []
+
+        for doc_file in sorted(DOCS_DIR.glob("*.txt")):
+            try:
+                text = doc_file.read_text(encoding="utf-8")
+            except Exception as exc:
+                logger.warning("RAG: fallback skipped unreadable doc %s: %s", doc_file, exc)
+                continue
+            for chunk in _chunk_text(text, doc_file.stem):
+                chunk["tokens"] = _tokens(chunk["text"])
+                chunks.append(chunk)
+
+        self._doc_chunks = chunks
+        return chunks
+
+    def _lexical_retrieve(self, user_question: str, limit: int = TOP_K) -> list[dict]:
+        """Simple cached lexical retriever used when vector retrieval is empty or unavailable."""
+        question_tokens = _tokens(user_question)
+        if not question_tokens:
+            return []
+
+        text = user_question.lower()
+        source_boosts = {
+            "clinic_overview": ("hour", "timing", "open", "sunday", "emergency", "pharmacy", "parking", "language", "department"),
+            "doctor_profiles": ("doctor", "dr", "fee", "qualification", "available", "specialist", "specialty", "dermatologist", "cardiologist"),
+            "policies": ("policy", "cancel", "reschedule", "walk", "record", "prescription", "photo", "attendant", "fee"),
+            "visiting_guidelines": ("bring", "document", "cnic", "parking", "visitor", "attendant", "wheelchair", "accessibility"),
+        }
+
+        ranked = []
+        for chunk in self._load_document_chunks():
+            chunk_tokens = chunk.get("tokens") or _tokens(chunk.get("text", ""))
+            overlap = len(question_tokens & chunk_tokens)
+            if overlap == 0:
+                continue
+            score = float(overlap)
+            chunk_text = chunk["text"].lower()
+            for token in question_tokens:
+                if token in chunk_text:
+                    score += 0.25
+            for source, keywords in source_boosts.items():
+                if chunk["source"] == source and any(keyword in text for keyword in keywords):
+                    score += 2.0
+            ranked.append((score, chunk))
+
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [chunk for _, chunk in ranked[:limit]]
+
+    def _retrieve_chunks(self, user_question: str) -> list[dict]:
+        entries: list[dict] = []
+        try:
+            self._init_client()
+            results = self._collection.query(
+                query_texts=[user_question],
+                n_results=max(TOP_K, 5),
+            )
+            docs = results.get("documents") or []
+            metas = results.get("metadatas") or []
+            documents = docs[0] if docs else []
+            metadatas = metas[0] if metas else []
+            for idx, doc in enumerate(documents):
+                if not str(doc or "").strip():
+                    continue
+                meta = metadatas[idx] if idx < len(metadatas) and isinstance(metadatas[idx], dict) else {}
+                entries.append({
+                    "text": str(doc),
+                    "source": str(meta.get("source") or "clinic_docs"),
+                })
+        except Exception as exc:
+            PROM_RAG_FALLBACK.labels(reason="vector_error").inc()
+            logger.warning("RAG: vector retrieval failed, using lexical fallback: %s", exc)
+
+        lexical = self._lexical_retrieve(user_question, limit=max(TOP_K, 5))
+        if not entries and lexical:
+            PROM_RAG_FALLBACK.labels(reason="lexical_only").inc()
+        elif lexical:
+            PROM_RAG_FALLBACK.labels(reason="lexical_rerank").inc()
+
+        seen = set()
+        merged = []
+        for entry in entries + lexical:
+            key = (entry["source"], entry["text"][:120])
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append({"text": entry["text"], "source": entry["source"]})
+        return merged[:max(TOP_K, 5)]
+
+    def _extractive_answer(self, user_question: str, entries: list[dict], language: str, mode: str) -> str:
+        question_tokens = _tokens(user_question)
+        if not entries or not question_tokens:
+            return self._fallback_message(language)
+
+        candidates = []
+        for entry in entries:
+            source = entry["source"]
+            for line in str(entry["text"]).splitlines():
+                clean = _clean_line(line)
+                if len(clean) < 5:
+                    continue
+                line_tokens = _tokens(clean)
+                overlap = len(question_tokens & line_tokens)
+                score = overlap
+                lower_line = clean.lower()
+                lower_question = user_question.lower()
+                if any(word in lower_question for word in ("hour", "timing", "open")) and any(word in lower_line for word in ("opening hours", "sunday", "available")):
+                    score += 4
+                if any(word in lower_question for word in ("bring", "document", "cnic")) and any(word in lower_line for word in ("cnic", "b-form", "insurance", "medical reports", "prescriptions")):
+                    score += 4
+                if "parking" in lower_question and "parking" in lower_line:
+                    score += 4
+                if any(word in lower_question for word in ("fee", "cost", "charge")) and "fee" in lower_line:
+                    score += 4
+                if any(word in lower_question for word in ("cancel", "reschedule")) and any(word in lower_line for word in ("cancel", "reschedule", "2 hours")):
+                    score += 4
+                if score > 0:
+                    candidates.append((score, source, clean))
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        selected = []
+        seen = set()
+        for _, _, line in candidates:
+            if line.lower() in seen:
+                continue
+            seen.add(line.lower())
+            selected.append(line)
+            if len(selected) >= (2 if mode == "voice" else 4):
+                break
+
+        if not selected:
+            return self._fallback_message(language)
+
+        answer = " ".join(selected)
+        return _plain_text_answer(answer, mode)
+
+    @staticmethod
+    def _fallback_message(language: str) -> str:
+        return (
+            "I don't have that specific information. "
+            "Please call 0800-MEDIFLOW."
+        )
 
     async def query(self, user_question: str, language: str = "en", mode: str = "text") -> str:
         """
@@ -209,34 +412,16 @@ class RAGService:
         t0 = time.time()
         PROM_RAG_QUERIES.labels(language=language).inc()
 
-        self._init_client()
+        entries = self._retrieve_chunks(user_question)
 
-        # Retrieval
-        try:
-            results = self._collection.query(
-                query_texts=[user_question],
-                n_results=TOP_K,
-            )
-        except Exception as e:
-            logger.error(f"RAG: ChromaDB query failed: {e}")
-            return (
-                "I do not have specific information about that. "
-                "Please call the clinic at 0800-MEDIFLOW for details."
-            )
-
-        chunks = results["documents"][0] if results["documents"] else []
-        sources = [m["source"] for m in results["metadatas"][0]] if results["metadatas"] else []
-
-        if not chunks:
+        if not entries:
             PROM_RAG_EMPTY.inc()
-            return (
-                "I do not have specific information about that. "
-                "Please call the clinic at 0800-MEDIFLOW for details."
-            )
+            PROM_RAG_LATENCY.observe(time.time() - t0)
+            return self._fallback_message(language)
 
         context = "\n\n---\n\n".join(
-            f"[From: {src}]\n{chunk}"
-            for chunk, src in zip(chunks, sources)
+            f"[From: {entry['source']}]\n{entry['text']}"
+            for entry in entries
         )
 
         lang_instruction = (
@@ -253,7 +438,8 @@ class RAGService:
 
         prompt = f"""You are a professional MediFlow clinic assistant.
 Your only source of information is the provided CONTEXT.
-If the CONTEXT does not contain the exact answer, say: "I don't have that specific information. Please call 0800-MEDIFLOW."
+If the CONTEXT contains relevant facts, answer from those facts even when wording differs from the patient's question.
+If the CONTEXT does not contain the answer, say exactly: "I don't have that specific information. Please call 0800-MEDIFLOW."
 Do not guess, invent policies, expose sources, mention chunks, or mention the retrieval system.
 {sentence_constraint}
 Be friendly, empathetic, and clear. Answer the patient's question directly first.
@@ -268,10 +454,13 @@ PATIENT QUESTION: {user_question}
 ANSWER:"""
 
         try:
-            resp = await llm_router.call(
-                messages=[{"role": "user", "content": prompt}],
-                system="You are a helpful clinic information assistant. Return only the final patient-facing answer in plain text.",
-                task_type="urdu" if language == "ur" else "rag",
+            resp = await asyncio.wait_for(
+                llm_router.call(
+                    messages=[{"role": "user", "content": prompt}],
+                    system="You are a helpful clinic information assistant. Return only the final patient-facing answer in plain text.",
+                    task_type="urdu" if language == "ur" else "rag",
+                ),
+                timeout=RAG_LLM_TIMEOUT_SECONDS,
             )
             answer = resp.text if resp and resp.text else None
         except Exception as e:
@@ -280,10 +469,21 @@ ANSWER:"""
 
         PROM_RAG_LATENCY.observe(time.time() - t0)
 
-        return answer or (
-            "I could not retrieve that information right now. "
-            "Please call 0800-MEDIFLOW for assistance."
-        )
+        if answer:
+            answer = _plain_text_answer(answer, mode)
+            lower_answer = answer.lower()
+            if (
+                "i don't have that specific information" not in lower_answer
+                and "i do not have that specific information" not in lower_answer
+                and "```" not in answer
+                and not answer.lstrip().startswith(("{", "["))
+            ):
+                return answer
+            PROM_RAG_FALLBACK.labels(reason="llm_unhelpful").inc()
+        else:
+            PROM_RAG_FALLBACK.labels(reason="llm_failure").inc()
+
+        return self._extractive_answer(user_question, entries, language, mode)
 
 
 # Singleton — import this everywhere

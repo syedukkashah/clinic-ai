@@ -52,6 +52,17 @@ async def test_route_intent_fallback_on_failure():
         assert result == "OPERATIONAL"
 
 
+@pytest.mark.asyncio
+async def test_route_intent_common_faq_uses_keywords_without_llm():
+    """Common clinic FAQ phrases should route to RAG even if the classifier is unavailable."""
+    with patch("services.intent_router.llm_router") as mock_router:
+        mock_router.call = AsyncMock(side_effect=Exception("LLM down"))
+        from services.intent_router import route_intent
+        result = await route_intent("What are your clinic timings and parking policy?")
+        assert result == "INFORMATIONAL"
+        mock_router.call.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # 4. test_rag_query_returns_grounded_answer
 # ---------------------------------------------------------------------------
@@ -224,8 +235,31 @@ async def test_rag_query_chroma_failure_returns_fallback():
     mock_collection.query.side_effect = Exception("ChromaDB is down")
     svc._collection = mock_collection
 
-    result = await svc.query("What should I do before appointment?")
+    with patch.object(svc, "_load_document_chunks", return_value=[]):
+        result = await svc.query("What should I do before appointment?")
     assert "0800-MEDIFLOW" in result
+
+
+@pytest.mark.asyncio
+async def test_rag_chroma_failure_uses_lexical_docs_and_extractive_answer():
+    """If Chroma is down, RAG should still answer from local clinic docs."""
+    from services.rag_service import RAGService
+
+    svc = RAGService.__new__(RAGService)
+    svc._client = MagicMock()
+    svc._embed_fn = MagicMock()
+
+    mock_collection = MagicMock()
+    mock_collection.query.side_effect = Exception("ChromaDB is down")
+    svc._collection = mock_collection
+
+    mock_router = MagicMock()
+    mock_router.call = AsyncMock(side_effect=Exception("LLM down"))
+    with patch("services.llm_router.llm_router", mock_router):
+        result = await svc.query("What documents should I bring to my appointment?")
+
+    assert "CNIC" in result or "Insurance" in result or "medical reports" in result
+    assert "0800-MEDIFLOW" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +287,81 @@ async def test_rag_query_llm_failure_returns_fallback():
         result = await svc.query("What should I do?")
 
     assert "0800-MEDIFLOW" in result
+
+
+@pytest.mark.asyncio
+async def test_rag_llm_failure_returns_grounded_extractive_answer():
+    """If retrieval works but LLM fails, RAG should still answer from retrieved lines."""
+    from services.rag_service import RAGService
+
+    svc = RAGService.__new__(RAGService)
+    svc._client = MagicMock()
+    svc._embed_fn = MagicMock()
+    svc._doc_chunks = []
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [[
+            "REQUIRED DOCUMENTS TO BRING:\n- Original CNIC for adults.\n- Insurance card if applicable.\n- Previous medical reports if available."
+        ]],
+        "metadatas": [[{"source": "visiting_guidelines"}]],
+    }
+    svc._collection = mock_collection
+
+    mock_router = MagicMock()
+    mock_router.call = AsyncMock(side_effect=Exception("LLM down"))
+    with patch("services.llm_router.llm_router", mock_router):
+        result = await svc.query("What documents should I bring?")
+
+    assert "CNIC" in result
+    assert "0800-MEDIFLOW" not in result
+
+
+@pytest.mark.asyncio
+async def test_rag_unhelpful_llm_answer_falls_back_to_context():
+    """If LLM refuses despite relevant context, use the retrieved context directly."""
+    from services.rag_service import RAGService
+
+    svc = RAGService.__new__(RAGService)
+    svc._client = MagicMock()
+    svc._embed_fn = MagicMock()
+    svc._doc_chunks = []
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["Opening hours: Monday to Saturday 9am to 8pm\nSunday: 9am to 2pm"]],
+        "metadatas": [[{"source": "clinic_overview"}]],
+    }
+    svc._collection = mock_collection
+
+    mock_llm_resp = MagicMock()
+    mock_llm_resp.text = "I don't have that specific information. Please call 0800-MEDIFLOW."
+    mock_router = MagicMock()
+    mock_router.call = AsyncMock(return_value=mock_llm_resp)
+    with patch("services.llm_router.llm_router", mock_router):
+        result = await svc.query("What are your opening hours?")
+
+    assert "Monday to Saturday" in result
+    assert "0800-MEDIFLOW" not in result
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_rag_exception_returns_safe_response():
+    """A RAG exception should not break the chat or voice pipeline."""
+    from agents.orchestrator import orchestrator
+    from services.rag_service import rag_service
+
+    with patch("agents.orchestrator.route_intent", AsyncMock(return_value="INFORMATIONAL")):
+        with patch.object(rag_service, "query", AsyncMock(side_effect=RuntimeError("RAG crashed"))):
+            result = await orchestrator.handle_booking(
+                "What are your opening hours?",
+                "test_rag_exception_session",
+                "en",
+                "text",
+            )
+
+    assert "0800-MEDIFLOW" in result.message
+    assert result.intent == "informational_query"
 
 
 # ---------------------------------------------------------------------------

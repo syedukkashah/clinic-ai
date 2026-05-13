@@ -74,10 +74,23 @@ class AgentOrchestrator:
         )
 
         if intent == "INFORMATIONAL":
-            response_text = await rag_service.query(transcript, language=lang, mode=mode)
+            try:
+                response_text = await rag_service.query(transcript, language=lang, mode=mode)
+            except Exception as exc:
+                logger.exception(
+                    "RAG route failed; returning safe fallback session=%s mode=%s: %s",
+                    session_id,
+                    mode,
+                    exc,
+                )
+                response_text = (
+                    "I don't have that specific information right now. "
+                    "Please call 0800-MEDIFLOW."
+                )
             return AgentResponse(
                 message=response_text,
                 appointment_data=None,
+                intent="informational_query",
             )
 
         # OPERATIONAL -> BookingAgent
