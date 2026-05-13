@@ -38,14 +38,20 @@ def _normalize_query(url: str, *, driver: str) -> str:
     )
 
 
+def _is_postgres_url(url: str) -> bool:
+    return url.startswith("postgresql://") or url.startswith("postgresql+")
+
+
 # Async engine for FastAPI routes (uses asyncpg driver)
 if _base_url.startswith("sqlite"):
     ASYNC_URL = _base_url.replace("sqlite://", "sqlite+aiosqlite://")
-else:
+elif _is_postgres_url(_base_url):
     ASYNC_URL = _normalize_query(
         _rewrite_scheme(_base_url, "postgresql+asyncpg"),
         driver="asyncpg",
     )
+else:
+    ASYNC_URL = _base_url
 async_engine_args = {
     "echo": False,
     "pool_size": 10,
@@ -63,7 +69,10 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # Sync engine for Alembic migrations only
-SYNC_URL = _normalize_query(_rewrite_scheme(_base_url, "postgresql"), driver="psycopg2")
+if _is_postgres_url(_base_url):
+    SYNC_URL = _normalize_query(_rewrite_scheme(_base_url, "postgresql"), driver="psycopg2")
+else:
+    SYNC_URL = _base_url
 sync_engine_args = {}
 if SYNC_URL.startswith("sqlite"):
     sync_engine_args["connect_args"] = {"check_same_thread": False}

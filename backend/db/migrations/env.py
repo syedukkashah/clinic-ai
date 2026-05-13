@@ -24,6 +24,9 @@ target_metadata = Base.metadata
 
 
 def normalize_sync_postgres_url(url: str) -> str:
+    if not (url.startswith("postgresql://") or url.startswith("postgresql+")):
+        return url
+
     parsed = urlsplit(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     if "ssl" in query and "sslmode" not in query:
