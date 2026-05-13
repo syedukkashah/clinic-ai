@@ -30,21 +30,57 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from db.session import AsyncSessionLocal
 from db import crud
 from services.llm_router import llm_router, AllProvidersExhausted
-from services.redis_memory import get_history, save_history, RECOVERY_MSG
+from services.redis_memory import (
+    clear_booking_state,
+    get_booking_state,
+    get_history,
+    save_booking_state,
+    save_history,
+    RECOVERY_MSG,
+)
 from services.ml_service import ml_service_client
 
 logger = logging.getLogger(__name__)
 
 MAX_STEPS_TEXT = 5
 MAX_STEPS_VOICE = 3
+
+DOCTOR_NAME_TO_ID = {
+    "ahmed": 1, "raza": 1,
+    "sara": 2, "malik": 2,
+    "kamran": 3, "iqbal": 3,
+    "nadia": 4, "hussain": 4,
+    "tariq": 5, "butt": 5,
+    "ayesha": 6, "khan": 6,
+    "bilal": 7, "chaudhry": 7,
+    "zara": 8, "siddiqui": 8,
+    "usman": 9, "qureshi": 9,
+    "hina": 10, "javed": 10,
+    "faisal": 11, "sheikh": 11,
+}
+
+DOCTOR_ID_TO_NAME = {
+    1: "Ahmed Raza",
+    2: "Sara Malik",
+    3: "Kamran Iqbal",
+    4: "Nadia Hussain",
+    5: "Tariq Butt",
+    6: "Ayesha Khan",
+    7: "Bilal Chaudhry",
+    8: "Zara Siddiqui",
+    9: "Usman Qureshi",
+    10: "Hina Javed",
+    11: "Faisal Sheikh",
+}
 
 
 # ── AgentResponse ─────────────────────────────────────────────────────────────
@@ -108,6 +144,7 @@ Use tools only when useful, in this exact JSON format:
 # enforced to keep TTS synthesis under 1.2s (part of the 4-8s voice latency budget).
 PROMPT_VOICE = """You are MediFlow, the clinic's voice assistant. 
 You handle live calls to book appointments and answer simple scheduling questions. Patient-facing replies must be plain spoken text. Never speak JSON, tool names, markdown, or internal details.
+Sound like a calm front-desk assistant: friendly, specific, and reassuring. Acknowledge what the caller said before asking the next question.
 
 ### YOUR CLINIC KNOWLEDGE (Doctor IDs):
 - **General**: Dr. Ahmed Raza (1), Dr. Sara Malik (2), Dr. Kamran Iqbal (3)
@@ -120,7 +157,9 @@ You handle live calls to book appointments and answer simple scheduling question
 - Keep conversational responses to MAX 2 SENTENCES.
 - No markdown, no asterisks, no bullet points. Plain spoken text only.
 - If booking details are missing, ask one concise question for the next missing detail.
-- Do not create an appointment until you have the patient's name, doctor or specialty, date, time, and reason.
+- Do not create an appointment until you have the patient's name, doctor or specialty, date, time, reason, and contact number.
+- Preserve context across turns. If the caller already gave a doctor, date, time, name, reason, or phone number, do not ask for it again.
+- When the caller gives only a phone number, treat it as their contact number and continue or confirm the booking.
 - After a tool result, summarize it naturally for the caller.
 - If the caller speaks Urdu, reply in Urdu.
 
@@ -173,6 +212,259 @@ def _normalize_tool_args(tool_name: str, args: Dict) -> Dict:
     if tool_name in {"list_doctors", "get_available_slots"}:
         normalized["specialty"] = _normalize_specialty(normalized.get("specialty"))
     return normalized
+
+
+def _looks_like_booking_message(message: str) -> bool:
+    text = message.lower()
+    booking_words = (
+        "book",
+        "appointment",
+        "appoint",
+        "schedule",
+        "visit",
+        "available",
+        "doctor",
+        "dr ",
+        "dr.",
+        "kamran",
+        "ahmed",
+        "sara",
+        "nadia",
+        "tariq",
+    )
+    symptom_words = ("flu", "fever", "cold", "cough", "pain", "checkup", "check-up")
+    phone_only = re.fullmatch(r"[\s:+()0-9-]{7,}", message.strip()) is not None
+    return phone_only or any(word in text for word in booking_words + symptom_words)
+
+
+def _extract_name(message: str) -> Optional[str]:
+    patterns = [
+        r"\bmy name is\s+([a-zA-Z][a-zA-Z .'-]{1,50})",
+        r"\bi am\s+([a-zA-Z][a-zA-Z .'-]{1,50})",
+        r"\bi'm\s+([a-zA-Z][a-zA-Z .'-]{1,50})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if match:
+            name = re.split(r"\s+(?:and|,|\.|i have|i want)\b", match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+            return " ".join(part.capitalize() for part in name.strip().split())
+    return None
+
+
+def _extract_phone(message: str) -> Optional[str]:
+    match = re.search(r"(?:\+?\d[\d\s().-]{6,}\d)", message)
+    if not match:
+        return None
+    digits = re.sub(r"\D", "", match.group(0))
+    return digits if len(digits) >= 7 else None
+
+
+def _extract_doctor(message: str) -> tuple[Optional[int], Optional[str]]:
+    text = message.lower()
+    for name_part, doctor_id in DOCTOR_NAME_TO_ID.items():
+        if name_part in text:
+            return doctor_id, DOCTOR_ID_TO_NAME.get(doctor_id)
+    return None, None
+
+
+def _extract_specialty(message: str) -> Optional[str]:
+    text = message.lower()
+    if any(word in text for word in ("flu", "fever", "cold", "cough", "general practitioner", "gp")):
+        return "general"
+    for key in ("cardiology", "cardiologist", "cardiologists", "pediatrics", "dermatology", "orthopedics"):
+        if key in text:
+            return _normalize_specialty(key)
+    return None
+
+
+def _extract_time(message: str) -> Optional[str]:
+    stripped = message.strip()
+    if re.fullmatch(r"[\s:+()0-9-]{7,}", stripped) or "number" in message.lower() or "contact" in message.lower():
+        return None
+    match = re.search(r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)?\b", message, flags=re.IGNORECASE)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2) or "00")
+    meridiem = (match.group(3) or "").lower()
+    if meridiem == "pm" and hour < 12:
+        hour += 12
+    if meridiem == "am" and hour == 12:
+        hour = 0
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _extract_date(message: str) -> Optional[str]:
+    text = message.lower()
+    today = datetime.now(timezone.utc).date()
+    if "tomorrow" in text:
+        return (today + timedelta(days=1)).isoformat()
+    weekdays = {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
+    }
+    for name, target in weekdays.items():
+        if name in text:
+            delta = (target - today.weekday()) % 7
+            if delta == 0:
+                delta = 7
+            return (today + timedelta(days=delta)).isoformat()
+    match = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", message)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _extract_complaint(message: str) -> Optional[str]:
+    text = message.lower()
+    symptoms = [symptom for symptom in ("flu", "fever", "cold", "cough", "pain", "checkup", "check-up") if symptom in text]
+    if symptoms:
+        return " and ".join(dict.fromkeys(symptoms)).replace("check-up", "checkup")
+    match = re.search(r"\bi have\s+([^.;]+)", message, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def _merge_booking_state(state: Dict[str, Any], message: str) -> Dict[str, Any]:
+    updated = dict(state or {})
+    updated["active"] = True
+    if name := _extract_name(message):
+        updated["patient_name"] = name
+    if phone := _extract_phone(message):
+        updated["contact_number"] = phone
+    doctor_id, doctor_name = _extract_doctor(message)
+    if doctor_id:
+        updated["doctor_id"] = doctor_id
+        updated["doctor_name"] = doctor_name
+    if specialty := _extract_specialty(message):
+        updated["specialty"] = specialty
+    if date_value := _extract_date(message):
+        updated["date"] = date_value
+    if time_value := _extract_time(message):
+        updated["time"] = time_value
+    if complaint := _extract_complaint(message):
+        updated["complaint"] = complaint
+    return updated
+
+
+def _missing_booking_fields(state: Dict[str, Any]) -> list[str]:
+    missing = []
+    if not state.get("patient_name"):
+        missing.append("your full name")
+    if not state.get("doctor_id") and not state.get("specialty"):
+        missing.append("which doctor or department you prefer")
+    if not state.get("date"):
+        missing.append("appointment date")
+    if not state.get("time"):
+        missing.append("appointment time")
+    if not state.get("complaint"):
+        missing.append("reason for visit")
+    if not state.get("contact_number"):
+        missing.append("your contact number")
+    return missing
+
+
+def _next_booking_question(missing: list[str]) -> str:
+    if not missing:
+        return ""
+    if len(missing) == 1:
+        return f"Please share {missing[0]} so I can confirm the appointment."
+    return "Please share " + ", ".join(missing[:-1]) + f", and {missing[-1]} so I can confirm the appointment."
+
+
+async def _doctor_summary_for_state(state: Dict[str, Any]) -> Optional[str]:
+    specialty = state.get("specialty")
+    if not specialty:
+        return None
+    return await _list_doctors({"specialty": specialty})
+
+
+async def _availability_summary(doctor_id: int, doctor_name: str | None = None) -> str:
+    async with AsyncSessionLocal() as db:
+        avail = await crud.get_doctor_availability(db, doctor_id)
+    slots = avail.get("availableSlots", [])[:6]
+    display_name = doctor_name or DOCTOR_ID_TO_NAME.get(doctor_id, f"ID {doctor_id}")
+    if slots:
+        return f"Dr. {display_name} has available slots at {', '.join(slots)}. Which date and time would you like?"
+    return f"I don't see open slots for Dr. {display_name} right now. Please choose another doctor or time."
+
+
+async def _handle_booking_state(message: str, session_id: str, redis_client, language: str, mode: str) -> Optional[AgentResponse]:
+    if not redis_client:
+        return None
+
+    state = await get_booking_state(redis_client, session_id)
+    active = bool(state.get("active"))
+    if not active and not _looks_like_booking_message(message):
+        return None
+
+    lowered = message.lower().strip()
+    previous_state = dict(state)
+    state = _merge_booking_state(state, message)
+
+    asks_availability = any(word in lowered for word in ("available", "availability", "timings", "timing", "days", "slots"))
+    if asks_availability and state.get("doctor_id"):
+        await save_booking_state(redis_client, session_id, state)
+        return AgentResponse(
+            message=await _availability_summary(int(state["doctor_id"]), state.get("doctor_name")),
+            intent="booking_intent",
+        )
+
+    if asks_availability and state.get("specialty") and not state.get("doctor_id"):
+        await save_booking_state(redis_client, session_id, state)
+        doctors_text = await _doctor_summary_for_state(state)
+        return AgentResponse(
+            message=f"{doctors_text}\nWhich doctor would you prefer?",
+            intent="booking_intent",
+        )
+
+    if previous_state.get("active") and _extract_phone(message) and _missing_booking_fields(state) == []:
+        args = {
+            "patient_name": state["patient_name"],
+            "doctor_id": state["doctor_id"],
+            "doctor_name": state.get("doctor_name"),
+            "date": state["date"],
+            "time": state["time"],
+            "complaint": state["complaint"],
+            "contact_number": state["contact_number"],
+            "booking_channel": "chat" if mode == "text" else "voice_note",
+        }
+        result = await _create_appointment(args)
+        await clear_booking_state(redis_client, session_id)
+        return AgentResponse(message=result, intent="booking_intent")
+
+    missing = _missing_booking_fields(state)
+    if not missing:
+        args = {
+            "patient_name": state["patient_name"],
+            "doctor_id": state.get("doctor_id"),
+            "doctor_name": state.get("doctor_name"),
+            "date": state["date"],
+            "time": state["time"],
+            "complaint": state["complaint"],
+            "contact_number": state["contact_number"],
+            "booking_channel": "chat" if mode == "text" else "voice_note",
+        }
+        result = await _create_appointment(args)
+        await clear_booking_state(redis_client, session_id)
+        return AgentResponse(message=result, intent="booking_intent")
+
+    await save_booking_state(redis_client, session_id, state)
+
+    if state.get("specialty") and not state.get("doctor_id") and any(word in lowered for word in ("available", "doctor", "doctors")):
+        doctors_text = await _doctor_summary_for_state(state)
+        return AgentResponse(
+            message=f"{doctors_text}\nWhich doctor would you prefer? After that, { _next_booking_question(missing).lower() }",
+            intent="booking_intent",
+        )
+
+    return AgentResponse(message=_next_booking_question(missing), intent="booking_intent")
 
 
 # ── Tool implementations (Ibrahim — do not modify) ────────────────────────────
@@ -310,7 +602,7 @@ async def _create_appointment(args: Dict) -> str:
         "patientId": patient_id,
         "patientName": patient_name,
         "doctorId": doctor_id,
-        "doctorName": args.get("doctor_name", ""),
+        "doctorName": args.get("doctor_name") or DOCTOR_ID_TO_NAME.get(doctor_id, ""),
         "slotId": None, # Ignore slot_id for now as the slots table is empty in demo data
         "time": time_value.split()[0].zfill(5) if ":" in time_value else time_value,
         "date": date_value,
@@ -328,7 +620,12 @@ async def _create_appointment(args: Dict) -> str:
         patient_check = await db.execute(select(Patient).where(Patient.id == patient_id))
         if not patient_check.scalar_one_or_none():
             logger.info("BookingAgent: Creating missing patient %s", patient_id)
-            new_patient = Patient(id=patient_id, name=patient_name, email=f"{patient_id}@example.com")
+            new_patient = Patient(
+                id=patient_id,
+                name=patient_name,
+                email=f"{patient_id}@example.com",
+                phone=args.get("contact_number"),
+            )
             db.add(new_patient)
             await db.flush() # ensure patient is saved before appt
             
@@ -552,6 +849,7 @@ class BookingAgent:
         session_id: str,
         language: str = "en",
         mode: str = "text",
+        lang: Optional[str] = None,
     ) -> AgentResponse:
         """
         Process a patient message and return a structured AgentResponse.
@@ -569,6 +867,13 @@ class BookingAgent:
         Returns:
             AgentResponse with .message (text for TTS/display) and .appointment_data.
         """
+        if lang is not None:
+            language = lang
+
+        deterministic = await _handle_booking_state(message, session_id, self._redis, language, mode)
+        if deterministic is not None:
+            return deterministic
+
         # Load Redis history
         history: List[Dict] = []
         if self._redis:
@@ -636,6 +941,16 @@ async def process_chat_message(
     Main entry point called by api/routes/chat.py.
     Handles Redis session memory, runs ReAct loop, returns response dict.
     """
+    deterministic = await _handle_booking_state(message, user_id, redis_client, language, mode)
+    if deterministic is not None:
+        return {
+            "response": deterministic.message,
+            "responseText": deterministic.message,
+            "agentId": "booking_agent",
+            "intent": deterministic.intent,
+            "suggestedActions": [],
+        }
+
     # Load history from Redis
     history = []
     if redis_client:

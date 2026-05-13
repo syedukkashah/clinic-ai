@@ -34,6 +34,10 @@ export interface CallAgentResult {
   greeting: string;
 }
 
+export interface VoiceCallSocketConfig {
+  sessionId: string;
+}
+
 export interface ContactAgentInput {
   lang: PatientLang;
   channel: ContactChannel;
@@ -90,6 +94,23 @@ function buildMockReply(lang: PatientLang, message: string) {
 }
 
 import { api } from "@/lib/api";
+
+export function getVoiceCallWsUrl({ sessionId }: VoiceCallSocketConfig) {
+  const explicit = import.meta.env.VITE_VOICE_WS_URL;
+  if (explicit) {
+    return explicit.replace("{sessionId}", encodeURIComponent(sessionId));
+  }
+
+  const apiBase = api.defaults.baseURL || "/api";
+  if (apiBase.startsWith("http")) {
+    const url = new URL(apiBase);
+    const protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${url.host}/ws/voice/${encodeURIComponent(sessionId)}`;
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/ws/voice/${encodeURIComponent(sessionId)}`;
+}
 
 export async function sendPatientMessage(
   input: SendPatientMessageInput,

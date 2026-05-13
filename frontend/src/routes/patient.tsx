@@ -33,8 +33,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  callAgent,
   contactAgent,
+  getVoiceCallWsUrl,
   processPatientVoice,
   sendPatientMessage,
   type ContactChannel,
@@ -97,6 +97,11 @@ function PatientPage() {
     greeting?: string;
     callId?: string;
   }>({ status: "idle" });
+  const [callTranscript, setCallTranscript] = useState("");
+  const [callReply, setCallReply] = useState("");
+  const callWsRef = useRef<WebSocket | null>(null);
+  const callRecorderRef = useRef<MediaRecorder | null>(null);
+  const callStreamRef = useRef<MediaStream | null>(null);
 
   const [contactOpen, setContactOpen] = useState(false);
   const [contactChannel, setContactChannel] = useState<ContactChannel>("email");
@@ -210,6 +215,110 @@ function PatientPage() {
     }
   };
 
+  const endVoiceCall = (closeDialog = true) => {
+    callRecorderRef.current?.stop();
+    callRecorderRef.current = null;
+    callStreamRef.current?.getTracks().forEach((track) => track.stop());
+    callStreamRef.current = null;
+    callWsRef.current?.close();
+    callWsRef.current = null;
+    setCallState({ status: "idle" });
+    setCallTranscript("");
+    setCallReply("");
+    if (closeDialog) setCallOpen(false);
+  };
+
+  const startVoiceCall = async () => {
+    if (callWsRef.current) return;
+
+    setCallOpen(true);
+    setCallState({ status: "connecting" });
+    setCallTranscript("");
+    setCallReply("");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      callStreamRef.current = stream;
+
+      const ws = new WebSocket(getVoiceCallWsUrl({ sessionId: sessionIdRef.current }));
+      callWsRef.current = ws;
+      ws.binaryType = "blob";
+
+      ws.onopen = () => {
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+        const recorder = new MediaRecorder(stream, { mimeType });
+        callRecorderRef.current = recorder;
+
+        recorder.ondataavailable = async (event) => {
+          if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            ws.send(await event.data.arrayBuffer());
+          }
+        };
+
+        recorder.start(250);
+        setCallState({
+          status: "connected",
+          callId: sessionIdRef.current,
+          greeting:
+            lang === "ur"
+              ? "Call connected. Please speak now."
+              : "Call connected. You can speak naturally now.",
+        });
+      };
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data === "string") {
+          const payload = JSON.parse(event.data);
+          if (payload.type === "partial") {
+            setCallTranscript(payload.text || "");
+          }
+          if (payload.type === "final") {
+            const userText = payload.transcript || "";
+            const aiText = payload.text || "";
+            setCallTranscript(userText);
+            setCallReply(aiText);
+            setMsgs((prev) => [
+              ...prev,
+              ...(userText ? [{ id: `cu${Date.now()}`, from: "user" as const, text: userText, time: "now" }] : []),
+              ...(aiText ? [{ id: `ca${Date.now() + 1}`, from: "ai" as const, text: aiText, time: "now" }] : []),
+            ]);
+          }
+          if (payload.type === "error") {
+            toast.error(payload.text || "Voice call failed");
+          }
+          return;
+        }
+
+        const audioBlob = event.data instanceof Blob ? event.data : new Blob([event.data], { type: "audio/mpeg" });
+        if (audioBlob.size > 0) {
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          audio.onended = () => URL.revokeObjectURL(audioUrl);
+          await audio.play();
+        }
+      };
+
+      ws.onerror = () => {
+        toast.error("Call connection failed");
+        endVoiceCall(false);
+      };
+
+      ws.onclose = () => {
+        callWsRef.current = null;
+        callRecorderRef.current?.stop();
+        callRecorderRef.current = null;
+        callStreamRef.current?.getTracks().forEach((track) => track.stop());
+        callStreamRef.current = null;
+      };
+    } catch {
+      endVoiceCall(false);
+      setCallOpen(false);
+      toast.error(lang === "ur" ? "Microphone access denied" : "Microphone access denied");
+    }
+  };
+
   useEffect(() => {
     if (!callOpen) {
       setCallState({ status: "idle" });
@@ -218,14 +327,22 @@ function PatientPage() {
     setCallState({ status: "connecting" });
     (async () => {
       try {
-        const res = await callAgent({ lang });
-        setCallState({ status: "connected", greeting: res.greeting, callId: res.callId });
+        setCallState({
+          status: "connected",
+          greeting:
+            lang === "ur"
+              ? "Call connected. Please speak now."
+              : "Call connected. You can speak naturally now.",
+          callId: sessionIdRef.current,
+        });
       } catch {
         setCallOpen(false);
         toast.error(lang === "ur" ? "کال شروع نہیں ہو سکی" : "Unable to start call");
       }
     })();
   }, [callOpen, lang]);
+
+  useEffect(() => () => endVoiceCall(false), []);
 
   const submitContact = async () => {
     if (!contactMessage.trim()) {
@@ -316,7 +433,7 @@ function PatientPage() {
 
               <Button
                 variant="outline"
-                onClick={() => setCallOpen(true)}
+                onClick={() => void startVoiceCall()}
                 className="gap-2"
                 disabled={sending}
               >
@@ -513,18 +630,27 @@ function PatientPage() {
         </div>
       </main>
 
-      <Dialog open={callOpen} onOpenChange={setCallOpen}>
+      <Dialog
+        open={callOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            void startVoiceCall();
+          } else {
+            endVoiceCall(true);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{lang === "ur" ? "ایجنٹ کو کال کریں" : "Call Agent"}</DialogTitle>
             <DialogDescription>
               {lang === "ur"
                 ? "یہ فیچر فی الحال موک ہے۔ بعد میں حقیقی ایجنٹ جوڑا جا سکتا ہے۔"
-                : "I can help you book appointments or answer clinic questions."}
+                : "Live voice assistant connected through your microphone."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-xl border border-border/60 bg-muted/40 p-4 space-y-2">
+          <div className="rounded-xl border border-border/60 bg-muted/40 p-4 space-y-3">
             <div className="text-sm font-medium">
               {callState.status === "connecting"
                 ? lang === "ur"
@@ -544,10 +670,22 @@ function PatientPage() {
             {callState.callId && (
               <div className="text-xs text-muted-foreground">{callState.callId}</div>
             )}
+            <div className="space-y-1.5">
+              <div className="text-xs text-muted-foreground">You said</div>
+              <div className="min-h-14 rounded-lg border border-border/60 bg-background/60 p-3 text-sm">
+                {callTranscript || "Listening for your voice..."}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="text-xs text-muted-foreground">MediFlow said</div>
+              <div className="min-h-14 rounded-lg border border-border/60 bg-background/60 p-3 text-sm">
+                {callReply || "The assistant response will appear here and play automatically."}
+              </div>
+            </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCallOpen(false)}>
+            <Button variant="outline" onClick={() => endVoiceCall(true)}>
               {lang === "ur" ? "کال ختم کریں" : "End call"}
             </Button>
           </DialogFooter>

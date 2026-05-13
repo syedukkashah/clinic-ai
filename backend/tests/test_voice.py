@@ -185,6 +185,25 @@ def test_twilio_webhook_deepgram_model():
     content = response.text
     assert "deepgram_nova-3" in content
     assert "multi" in content
+    assert "Welcome to MediFlow" in content
+
+
+def test_twilio_empty_speech_regathers_without_agent_call():
+    """Empty Twilio speech should ask the caller to repeat, not invoke the agent."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.routes.twilio_voice import router as twilio_router
+
+    mini_app = FastAPI()
+    mini_app.include_router(twilio_router, prefix="/api/twilio")
+
+    client = TestClient(mini_app)
+    with patch("api.routes.twilio_voice.orchestrator.handle_booking", AsyncMock()) as mock_agent:
+        response = client.post("/api/twilio/process", data={"CallSid": "CAtest123", "SpeechResult": ""})
+
+    assert response.status_code == 200
+    assert "Please say that again" in response.text
+    mock_agent.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

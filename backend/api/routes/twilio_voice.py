@@ -30,7 +30,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 STATIC_AUDIO_DIR = os.environ.get("STATIC_AUDIO_DIR", "static/audio")
-APP_DOMAIN = os.environ.get("APP_DOMAIN", "https://localhost:8000")
+APP_DOMAIN = os.environ.get("APP_DOMAIN") or os.environ.get("PUBLIC_API_URL") or "https://localhost:8000"
+
+
+def _public_base_url() -> str:
+    base = APP_DOMAIN.strip().rstrip("/")
+    if base.endswith("/api"):
+        base = base[:-4]
+    if not base.startswith(("http://", "https://")):
+        base = f"https://{base}"
+    return base
+
+
+def _gather(action: str):
+    from twilio.twiml.voice_response import Gather
+
+    return Gather(
+        input="speech",
+        action=action,
+        timeout=6,
+        speech_timeout="auto",
+        speech_model="deepgram_nova-3",
+        language="multi",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -59,21 +81,21 @@ async def incoming_call(request: Request):
     Returns TwiML that greets the caller and starts a Gather
     with Deepgram Nova-3 as the speech model.
     """
-    from twilio.twiml.voice_response import VoiceResponse, Gather
+    from twilio.twiml.voice_response import VoiceResponse
 
-    session_id = f"twilio_{request.query_params.get('CallSid', 'unknown')}"
+    form = await request.form()
+    call_sid = str(form.get("CallSid") or request.query_params.get("CallSid") or "unknown")
+    session_id = f"twilio_{call_sid}"
     resp = VoiceResponse()
-    gather = Gather(
-        input="speech",
-        action=f"/api/twilio/process?session_id={session_id}",
-        timeout=5,
-        speech_timeout="auto",
-        speech_model="deepgram_nova-3",
-        language="multi",
-    )
+    gather = _gather(f"/api/twilio/process?session_id={session_id}")
     gather.say(
         "میڈی فلو میں خوش آمدید۔ میں آپ کی کیسے مدد کر سکتا ہوں؟",
         language="ur-PK",
+    )
+    gather = _gather(f"/api/twilio/process?session_id={session_id}")
+    gather.say(
+        "Welcome to MediFlow. I can help with appointments, clinic timings, or doctor availability. How can I help today?",
+        language="en-US",
     )
     resp.append(gather)
     resp.redirect("/api/twilio/incoming")
@@ -98,7 +120,7 @@ async def process_speech(
     language, run the agent, synthesize TTS, and return TwiML that
     plays the audio and re-gathers.
     """
-    from twilio.twiml.voice_response import VoiceResponse, Gather
+    from twilio.twiml.voice_response import VoiceResponse
 
     # Get session_id from query params if not in form
     if not session_id:
@@ -106,6 +128,13 @@ async def process_speech(
 
     transcript = SpeechResult
     lang = _detect_lang_from_transcript(transcript)
+
+    twiml = VoiceResponse()
+    if not transcript.strip():
+        gather = _gather(f"/api/twilio/process?session_id={session_id}")
+        gather.say("Sorry, I did not catch that. Please say that again.", language="en-US")
+        twiml.append(gather)
+        return Response(content=str(twiml), media_type="text/xml")
 
     logger.info(
         "Twilio speech — session=%s lang=%s transcript=%s",
@@ -115,8 +144,9 @@ async def process_speech(
     )
 
     # Agent
+    redis = getattr(request.app.state, "redis", None)
     response = await orchestrator.handle_booking(
-        transcript, session_id, lang, mode="voice"
+        transcript, session_id, lang, mode="voice", redis=redis
     )
 
     # TTS
@@ -126,16 +156,8 @@ async def process_speech(
     await tts_service.synthesize(response.message, lang, audio_path)
 
     # Build TwiML response
-    twiml = VoiceResponse()
-    twiml.play(f"{APP_DOMAIN}/static/audio/{audio_filename}")
-    gather = Gather(
-        input="speech",
-        action=f"/api/twilio/process?session_id={session_id}",
-        timeout=5,
-        speech_timeout="auto",
-        speech_model="deepgram_nova-3",
-        language="multi",
-    )
+    twiml.play(f"{_public_base_url()}/static/audio/{audio_filename}")
+    gather = _gather(f"/api/twilio/process?session_id={session_id}")
     twiml.append(gather)
     twiml.hangup()
     return Response(content=str(twiml), media_type="text/xml")

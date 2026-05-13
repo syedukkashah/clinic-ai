@@ -47,6 +47,7 @@ async def ws_voice(ws: WebSocket, session_id: str):
     """
     await ws.accept()
     logger.info("WebRTC WS connected — session=%s", session_id)
+    await ws.send_json({"type": "status", "text": "connected"})
 
     dg_connection = None
     final_lang = "en"
@@ -73,8 +74,9 @@ async def ws_voice(ws: WebSocket, session_id: str):
                 })
 
                 # Agent
+                redis = getattr(ws.app.state, "redis", None)
                 response = await orchestrator.handle_booking(
-                    sentence, session_id, lang, mode="voice"
+                    sentence, session_id, lang, mode="voice", redis=redis
                 )
 
                 # TTS

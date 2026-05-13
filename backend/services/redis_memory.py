@@ -37,6 +37,9 @@ def _history_key(session_id: str) -> str:
 def _meta_key(session_id: str) -> str:
     return f"session:{session_id}:meta"
 
+def _booking_key(session_id: str) -> str:
+    return f"session:{session_id}:booking"
+
 # ── Recovery messages (EN + UR) ────────────────────────────────────────────────
 # Shown when Redis TTL expired and agent needs to recover context via PostgreSQL
 RECOVERY_MSG = {
@@ -115,6 +118,43 @@ async def clear_history(redis, session_id: str) -> None:
         logger.info("Session %s explicitly cleared", session_id)
     except Exception as e:
         logger.error("Redis delete failed for session %s: %s", session_id, e)
+
+
+async def get_booking_state(redis, session_id: str) -> dict:
+    """Return in-progress booking state for a session, or an empty dict."""
+    key = _booking_key(session_id)
+    try:
+        raw = await redis.get(key)
+        if raw is None:
+            return {}
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        state = json.loads(raw)
+        return state if isinstance(state, dict) else {}
+    except json.JSONDecodeError:
+        logger.warning("Corrupt Redis booking state for session %s — resetting", session_id)
+        await redis.delete(key)
+        return {}
+    except Exception as e:
+        logger.error("Redis booking state get failed for session %s: %s", session_id, e)
+        return {}
+
+
+async def save_booking_state(redis, session_id: str, state: dict) -> None:
+    """Persist in-progress booking state with the same TTL as chat history."""
+    key = _booking_key(session_id)
+    try:
+        await redis.setex(key, SESSION_TTL_SECONDS, json.dumps(state, ensure_ascii=False))
+    except Exception as e:
+        logger.error("Redis booking state save failed for session %s: %s", session_id, e)
+
+
+async def clear_booking_state(redis, session_id: str) -> None:
+    """Clear any in-progress booking state."""
+    try:
+        await redis.delete(_booking_key(session_id))
+    except Exception as e:
+        logger.error("Redis booking state delete failed for session %s: %s", session_id, e)
 
 
 async def session_exists(redis, session_id: str) -> bool:

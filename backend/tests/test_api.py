@@ -102,6 +102,7 @@ def test_chat_message_endpoint_uses_orchestrator(client):
         session_id="patient-session",
         lang="en",
         mode="text",
+        redis=None,
     )
     assert "Clinic hours" in res.json()["response"]
 
@@ -122,9 +123,22 @@ def test_chat_message_endpoint_passes_language(client):
         session_id="patient-session",
         lang="ur",
         mode="text",
+        redis=None,
     )
     body = res.json()
     assert body["response"] == body["responseText"]
+
+
+def test_chat_message_contact_agent_short_circuits(client):
+    res = client.post(
+        "/api/chat/message",
+        json={"userId": "patient-session", "message": "Talk to an agent"},
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["intent"] == "contact_agent"
+    assert "Contact Agent" in body["response"]
 
 
 from db.models import Patient, Doctor
