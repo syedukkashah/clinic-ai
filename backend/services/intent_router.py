@@ -70,6 +70,41 @@ def _keyword_route(message: str) -> str | None:
     )
     if any(word in text for word in listing_words) and any(word in text for word in doctor_words):
         return "OPERATIONAL"
+
+    operational_words = (
+        "book",
+        "schedule",
+        "reschedule",
+        "cancel",
+        "confirm appointment",
+        "move my appointment",
+    )
+    informational_words = (
+        "opening hour",
+        "open",
+        "timing",
+        "clinic hour",
+        "visiting hour",
+        "policy",
+        "parking",
+        "bring",
+        "document",
+        "cnic",
+        "insurance",
+        "payment",
+        "fee",
+        "cost",
+        "medical record",
+        "prescription",
+        "pharmacy",
+        "emergency",
+        "wheelchair",
+        "accessible",
+        "language",
+        "qualification",
+    )
+    if any(word in text for word in informational_words) and not any(word in text for word in operational_words):
+        return "INFORMATIONAL"
     return None
 
 
