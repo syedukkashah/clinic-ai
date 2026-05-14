@@ -224,6 +224,13 @@ def _normalize_tool_args(tool_name: str, args: Dict) -> Dict:
     return normalized
 
 
+def _format_doctor_name(name: Any) -> str:
+    display = str(name or "").strip()
+    if not display:
+        return "Doctor"
+    return display if display.lower().startswith("dr.") else f"Dr. {display}"
+
+
 def _looks_like_booking_message(message: str) -> bool:
     text = message.lower()
     booking_words = (
@@ -245,6 +252,42 @@ def _looks_like_booking_message(message: str) -> bool:
     symptom_words = ("flu", "fever", "cold", "cough", "pain", "checkup", "check-up")
     phone_only = re.fullmatch(r"[\s:+()0-9-]{7,}", message.strip()) is not None
     return phone_only or any(word in text for word in booking_words + symptom_words)
+
+
+def _looks_like_reschedule_message(message: str) -> bool:
+    text = message.lower()
+    return any(word in text for word in ("reschedule", "reschdule", "change appointment", "move appointment", "move this", "move it"))
+
+
+def _looks_like_cancel_intent(message: str) -> bool:
+    text = message.lower()
+    return "cancel appointment" in text or bool(_extract_appointment_id(message) and "cancel" in text)
+
+
+def _is_abort_message(message: str) -> bool:
+    text = re.sub(r"[^a-z0-9\s]", "", message.lower()).strip()
+    aborts = {
+        "nvm",
+        "never mind",
+        "nevermind",
+        "forget it",
+        "leave it",
+        "stop",
+        "stop this",
+        "cancel",
+        "cancel this",
+        "shush",
+        "no thanks",
+        "not now",
+    }
+    if _extract_appointment_id(message):
+        return False
+    return text in aborts
+
+
+def _extract_appointment_id(message: str) -> Optional[str]:
+    match = re.search(r"\bapt[-_][a-zA-Z0-9-]+\b", message, flags=re.IGNORECASE)
+    return match.group(0).replace("_", "-") if match else None
 
 
 def _extract_name(message: str) -> Optional[str]:
@@ -312,12 +355,20 @@ def _extract_time(message: str) -> Optional[str]:
     stripped = message.strip()
     if re.fullmatch(r"[\s:+()0-9-]{7,}", stripped) or "number" in message.lower() or "contact" in message.lower():
         return None
-    match = re.search(r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)?\b", message, flags=re.IGNORECASE)
+
+    match = re.search(r"(?<![-\d])\b([01]?\d|2[0-3]):([0-5]\d)\s*(am|pm)?\b", message, flags=re.IGNORECASE)
+    if not match:
+        match = re.search(r"(?<![-\d])\b(1[0-2]|0?[1-9])\s*(am|pm)\b", message, flags=re.IGNORECASE)
     if not match:
         return None
+
     hour = int(match.group(1))
-    minute = int(match.group(2) or "00")
-    meridiem = (match.group(3) or "").lower()
+    if match.lastindex == 3:
+        minute = int(match.group(2) or "00")
+        meridiem = (match.group(3) or "").lower()
+    else:
+        minute = 0
+        meridiem = (match.group(2) or "").lower()
     if meridiem == "pm" and hour < 12:
         hour += 12
     if meridiem == "am" and hour == 12:
@@ -449,12 +500,51 @@ def _next_booking_question(missing: list[str]) -> str:
     return "Please share " + ", ".join(missing[:-1]) + f", and {missing[-1]} so I can confirm the appointment."
 
 
+def _missing_reschedule_fields(state: Dict[str, Any]) -> list[str]:
+    missing = []
+    if not state.get("appointment_id"):
+        missing.append("appointment ID")
+    if not state.get("date"):
+        missing.append("new appointment date")
+    if not state.get("time"):
+        missing.append("new appointment time")
+    return missing
+
+
+def _next_reschedule_question(missing: list[str]) -> str:
+    if not missing:
+        return ""
+    if len(missing) == 1:
+        return f"Please share the {missing[0]} so I can reschedule the appointment."
+    return "Please share the " + ", ".join(missing[:-1]) + f", and {missing[-1]} so I can reschedule the appointment."
+
+
 def _ensure_doctor_for_department(state: Dict[str, Any]) -> Dict[str, Any]:
     if not state.get("doctor_id") and state.get("specialty"):
         specialty = _normalize_specialty(state["specialty"])
         state["doctor_id"] = DEFAULT_DOCTOR_BY_SPECIALTY.get(specialty, 1)
         state["doctor_name"] = DOCTOR_ID_TO_NAME.get(state["doctor_id"])
     return state
+
+
+def _merge_reschedule_state(state: Dict[str, Any], message: str) -> Dict[str, Any]:
+    updated = dict(state or {})
+    updated["active"] = True
+    updated["intent"] = "reschedule"
+    if appointment_id := _extract_appointment_id(message):
+        updated["appointment_id"] = appointment_id
+
+    lowered = message.lower()
+    looks_like_existing_summary = bool(_extract_appointment_id(message)) and (
+        "date:" in lowered or "id:" in lowered
+    ) and not any(marker in lowered for marker in (" to ", "new ", "instead", "move to", "change to", "reschedule to", "reschedule for"))
+
+    if not looks_like_existing_summary:
+        if date_value := _extract_date(message):
+            updated["date"] = date_value
+        if time_value := _extract_time(message):
+            updated["time"] = time_value
+    return updated
 
 
 async def _doctor_summary_for_state(state: Dict[str, Any]) -> Optional[str]:
@@ -470,8 +560,8 @@ async def _availability_summary(doctor_id: int, doctor_name: str | None = None) 
     slots = avail.get("availableSlots", [])[:6]
     display_name = doctor_name or DOCTOR_ID_TO_NAME.get(doctor_id, f"ID {doctor_id}")
     if slots:
-        return f"Dr. {display_name} has available slots at {', '.join(slots)}. Which date and time would you like?"
-    return f"I don't see open slots for Dr. {display_name} right now. Please choose another doctor or time."
+        return f"{_format_doctor_name(display_name)} has available slots at {', '.join(slots)}. Which date and time would you like?"
+    return f"I don't see open slots for {_format_doctor_name(display_name)} right now. Please choose another doctor or time."
 
 
 async def _handle_booking_state(message: str, session_id: str, redis_client, language: str, mode: str) -> Optional[AgentResponse]:
@@ -480,10 +570,50 @@ async def _handle_booking_state(message: str, session_id: str, redis_client, lan
 
     state = await get_booking_state(redis_client, session_id)
     active = bool(state.get("active"))
+    lowered = message.lower().strip()
+
+    if active and _is_abort_message(message):
+        await clear_booking_state(redis_client, session_id)
+        return AgentResponse(
+            message="No problem. I paused that appointment request. How else can I help?",
+            intent="booking_cancelled",
+        )
+
+    if _looks_like_reschedule_message(message) or state.get("intent") == "reschedule":
+        reschedule_state = _merge_reschedule_state(state, message)
+        missing = _missing_reschedule_fields(reschedule_state)
+        if not missing:
+            result = await _reschedule_appointment({
+                "appointment_id": reschedule_state["appointment_id"],
+                "date": reschedule_state["date"],
+                "time": reschedule_state["time"],
+            })
+            await clear_booking_state(redis_client, session_id)
+            return AgentResponse(message=result, intent="reschedule_intent")
+
+        await save_booking_state(redis_client, session_id, reschedule_state)
+        return AgentResponse(message=_next_reschedule_question(missing), intent="reschedule_intent")
+
+    if _looks_like_cancel_intent(message):
+        appointment_id = _extract_appointment_id(message)
+        if appointment_id:
+            result = await _cancel_appointment({"appointment_id": appointment_id})
+            await clear_booking_state(redis_client, session_id)
+            return AgentResponse(message=result, intent="cancel_intent")
+        await save_booking_state(redis_client, session_id, {"active": True, "intent": "cancel"})
+        return AgentResponse(message="Please share the appointment ID you want to cancel.", intent="cancel_intent")
+
+    if state.get("intent") == "cancel":
+        appointment_id = _extract_appointment_id(message)
+        if appointment_id:
+            result = await _cancel_appointment({"appointment_id": appointment_id})
+            await clear_booking_state(redis_client, session_id)
+            return AgentResponse(message=result, intent="cancel_intent")
+        return AgentResponse(message="Please share the appointment ID you want to cancel.", intent="cancel_intent")
+
     if not active and not _looks_like_booking_message(message):
         return None
 
-    lowered = message.lower().strip()
     previous_state = dict(state)
     state = _merge_booking_state(state, message)
 
@@ -565,7 +695,7 @@ async def _get_available_slots(args: Dict) -> str:
             slots = avail.get("availableSlots", [])[:3]
             if slots:
                 result.append(
-                    f"Dr. {doc['name']} (ID:{doc['id']}) — slots: "
+                    f"{_format_doctor_name(doc.get('name'))} (ID:{doc['id']}) — slots: "
                     + ", ".join(slots)
                 )
                 
@@ -585,7 +715,7 @@ async def _list_doctors(args: Dict) -> str:
         return f"I could not find doctors for {specialty}. Available departments are General Practice, Cardiology, Pediatrics, Dermatology, and Orthopedics."
 
     lines = [
-        f"Dr. {doc['name']} (ID {doc['id']}), {doc.get('specialty', 'General Practice')}"
+        f"{_format_doctor_name(doc.get('name'))} (ID {doc['id']}), {doc.get('specialty', 'General Practice')}"
         for doc in matching[:8]
     ]
     return "Available doctors:\n" + "\n".join(lines)
@@ -605,7 +735,7 @@ async def _get_doctor_profile(args: Dict) -> str:
     if not doc:
         return f"Doctor with ID {doctor_id} not found."
     return (
-        f"Dr. {doc['name']} | Specialty: {doc['specialty']} | "
+        f"{_format_doctor_name(doc.get('name'))} | Specialty: {doc['specialty']} | "
         f"Avg consult: {doc.get('avgConsultMin', 'N/A')} min | "
         f"Status: {doc.get('status', 'unknown')}"
     )
@@ -619,7 +749,7 @@ async def _check_patient_history(args: Dict) -> str:
     if not patient_appts:
         return f"No appointment history found for patient {patient_id}."
     lines = [
-        f"- {a.get('date')} with Dr. {a.get('doctorName')} ({a.get('status')})"
+        f"- {a.get('date')} with {_format_doctor_name(a.get('doctorName'))} ({a.get('status')})"
         for a in patient_appts
     ]
     return "Last visits:\n" + "\n".join(lines)
@@ -723,6 +853,8 @@ async def _cancel_appointment(args: Dict) -> str:
     appointment_id = args.get("appointment_id", "")
     async with AsyncSessionLocal() as db:
         success = await crud.delete_appointment(db, appointment_id)
+        if success:
+            await db.commit()
     if success:
         return f"Appointment {appointment_id} has been cancelled."
     return f"Could not find appointment {appointment_id}."
@@ -730,14 +862,34 @@ async def _cancel_appointment(args: Dict) -> str:
 
 async def _reschedule_appointment(args: Dict) -> str:
     appointment_id = args.get("appointment_id", "")
+    date_value = str(args.get("date") or "").strip()
+    time_value = str(args.get("time") or "").strip()
     new_slot_id = args.get("new_slot_id")
+
+    missing = []
+    if not appointment_id:
+        missing.append("appointment ID")
+    if not date_value:
+        missing.append("new appointment date")
+    if not time_value:
+        missing.append("new appointment time")
+    if missing:
+        return "Please share the " + ", ".join(missing) + " so I can reschedule the appointment."
+
+    patch = {
+        "date": date_value,
+        "time": time_value,
+        "status": "Confirmed",
+    }
+    if new_slot_id is not None:
+        patch["slotId"] = str(new_slot_id)
+
     async with AsyncSessionLocal() as db:
-        updated = await crud.update_appointment(db, appointment_id, {
-            "slotId": str(new_slot_id),
-            "status": "Confirmed",
-        })
+        updated = await crud.update_appointment(db, appointment_id, patch)
+        if updated:
+            await db.commit()
     if updated:
-        return f"Appointment {appointment_id} rescheduled successfully."
+        return f"Appointment {appointment_id} rescheduled successfully. New date: {date_value} at {time_value}."
     return f"Could not reschedule appointment {appointment_id}."
 
 
