@@ -265,6 +265,67 @@ async def test_booking_state_accepts_comma_separated_details():
 
 
 @pytest.mark.anyio
+async def test_booking_state_can_be_paused_without_looping():
+    """Short escape phrases should clear stale booking state instead of repeating missing fields."""
+    redis = FakeRedis()
+    session_id = "patient-stale-booking"
+
+    first = await process_chat_message(
+        user_id=session_id,
+        message="Book an appointment",
+        redis_client=redis,
+    )
+    assert "which doctor" in first["response"].lower()
+
+    paused = await process_chat_message(
+        user_id=session_id,
+        message="nvm",
+        redis_client=redis,
+    )
+
+    assert "paused" in paused["response"].lower()
+    assert "which doctor or department" not in paused["response"].lower()
+
+
+@pytest.mark.anyio
+async def test_reschedule_flow_does_not_create_new_appointment():
+    """Reschedule intent should not fall into create_appointment missing-field prompts."""
+    redis = FakeRedis()
+    session_id = "patient-reschedule-session"
+
+    with patch("agents.booking_agent._create_appointment", AsyncMock()) as mock_create, \
+         patch("agents.booking_agent._reschedule_appointment", AsyncMock(return_value="Appointment apt-123 rescheduled successfully. New date: 2026-05-19 at 11:00.")) as mock_reschedule:
+        first = await process_chat_message(
+            user_id=session_id,
+            message="hello, I need to reschedule an appointment",
+            redis_client=redis,
+        )
+        assert "appointment id" in first["response"].lower()
+
+        second = await process_chat_message(
+            user_id=session_id,
+            message="doctor sara, ID: apt-123. Date: 2026-05-18 at 10:00.",
+            redis_client=redis,
+        )
+        assert "new appointment date" in second["response"].lower()
+        assert "reason for visit" not in second["response"].lower()
+
+        final = await process_chat_message(
+            user_id=session_id,
+            message="move it to 2026-05-19 at 11:00",
+            redis_client=redis,
+        )
+
+    mock_create.assert_not_called()
+    mock_reschedule.assert_awaited_once()
+    args = mock_reschedule.await_args.args[0]
+    assert args["appointment_id"] == "apt-123"
+    assert args["date"] == "2026-05-19"
+    assert args["time"] == "11:00"
+    assert "rescheduled successfully" in final["response"]
+
+
+@pytest.mark.anyio
 async def test_process_chat_tool_then_plain(mock_redis, mock_llm_tool_then_plain):
     """Booking requests with missing details ask a safe clarification before LLM tool use."""
     responses = iter(mock_llm_tool_then_plain)

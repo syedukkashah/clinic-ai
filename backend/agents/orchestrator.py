@@ -14,7 +14,7 @@ from agents.booking_agent import AgentResponse, booking_agent
 from agents.booking_agent import BookingAgent
 from services.intent_router import route_intent
 from services.rag_service import rag_service
-from services.redis_memory import get_booking_state
+from services.redis_memory import clear_booking_state, get_booking_state
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from prometheus_client import Counter
@@ -26,6 +26,29 @@ PROM_AGENT_STEPS = Counter(
     "Agent tool calls",
     ["agent", "tool"]
 )
+
+
+def _is_abort_message(message: str) -> bool:
+    lowered = message.lower().strip()
+    return lowered in {
+        "nvm",
+        "never mind",
+        "nevermind",
+        "forget it",
+        "leave it",
+        "stop",
+        "stop this",
+        "cancel",
+        "cancel this",
+        "shush",
+        "no thanks",
+        "not now",
+    }
+
+
+def _is_reschedule_or_cancel(message: str) -> bool:
+    lowered = message.lower()
+    return any(word in lowered for word in ("reschedule", "reschdule", "cancel appointment", "change appointment", "move appointment"))
 
 class AgentOrchestrator:
     """Routes incoming requests via intent classification."""
@@ -64,7 +87,23 @@ class AgentOrchestrator:
             )
 
         booking_state = await get_booking_state(redis, session_id) if redis else {}
-        intent = "OPERATIONAL" if booking_state.get("active") else await route_intent(transcript)
+
+        if booking_state.get("active") and _is_abort_message(transcript):
+            if redis:
+                await clear_booking_state(redis, session_id)
+            return AgentResponse(
+                message="No problem. I paused that appointment request. How else can I help?",
+                appointment_data=None,
+                intent="booking_cancelled",
+            )
+
+        intent = await route_intent(transcript)
+        if booking_state.get("active") and intent == "INFORMATIONAL":
+            if redis:
+                await clear_booking_state(redis, session_id)
+        elif booking_state.get("active") or _is_reschedule_or_cancel(transcript):
+            intent = "OPERATIONAL"
+
         logger.info(
             "Orchestrator intent=%s session=%s lang=%s mode=%s",
             intent,

@@ -219,6 +219,102 @@ async def test_orchestrator_routes_informational_to_rag():
     assert result.appointment_data is None
 
 
+@pytest.mark.asyncio
+async def test_orchestrator_active_booking_can_route_faq_to_rag():
+    """A stale booking state must not trap FAQ queries in the booking prompt loop."""
+    from agents.orchestrator import orchestrator
+    from services.rag_service import rag_service
+
+    class FakeRedis:
+        def __init__(self):
+            self.store = {}
+
+        async def get(self, key):
+            return self.store.get(key)
+
+        async def setex(self, key, ttl, value):
+            self.store[key] = value
+
+        async def delete(self, key):
+            self.store.pop(key, None)
+
+    redis = FakeRedis()
+    await redis.setex(
+        "session:test_active_faq:booking",
+        1800,
+        '{"active": true, "specialty": "general"}',
+    )
+
+    test_answer = "Clinic hours are Monday to Saturday 9am to 8pm."
+    with patch("agents.orchestrator.route_intent", AsyncMock(return_value="INFORMATIONAL")):
+        with patch.object(rag_service, "query", AsyncMock(return_value=test_answer)) as mock_rag:
+            result = await orchestrator.handle_booking(
+                "Clinic hours",
+                "test_active_faq",
+                "en",
+                "text",
+                redis=redis,
+            )
+
+    assert result.message == test_answer
+    assert result.intent == "informational_query"
+    mock_rag.assert_awaited_once()
+    assert await redis.get("session:test_active_faq:booking") is None
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_reschedule_can_be_paused_then_faq_routes_to_rag():
+    """Patients can leave a reschedule flow and ask a FAQ without the booking prompt repeating."""
+    from agents.orchestrator import orchestrator
+    from services.rag_service import rag_service
+
+    class FakeRedis:
+        def __init__(self):
+            self.store = {}
+
+        async def get(self, key):
+            return self.store.get(key)
+
+        async def setex(self, key, ttl, value):
+            self.store[key] = value
+
+        async def delete(self, key):
+            self.store.pop(key, None)
+
+    redis = FakeRedis()
+    session_id = "test_reschedule_escape"
+    faq_answer = "Clinic hours are Monday to Friday, 9:00 AM to 5:00 PM."
+
+    with patch(
+        "agents.orchestrator.route_intent",
+        AsyncMock(side_effect=["OPERATIONAL", "OPERATIONAL", "INFORMATIONAL"]),
+    ), patch.object(rag_service, "query", AsyncMock(return_value=faq_answer)) as mock_rag:
+        first = await orchestrator.handle_booking(
+            "hello, I need to reschedule an appointment",
+            session_id,
+            "en",
+            "text",
+            redis=redis,
+        )
+        second = await orchestrator.handle_booking(
+            "doctor sara, ID: apt-123. Date: 2026-05-18 at 10:00.",
+            session_id,
+            "en",
+            "text",
+            redis=redis,
+        )
+        paused = await orchestrator.handle_booking("nvm", session_id, "en", "text", redis=redis)
+        faq = await orchestrator.handle_booking("Clinic hours", session_id, "en", "text", redis=redis)
+
+    assert "appointment id" in first.message.lower()
+    assert "new appointment date" in second.message.lower()
+    assert "reason for visit" not in second.message.lower()
+    assert "paused" in paused.message.lower()
+    assert faq.message == faq_answer
+    assert "which doctor or department" not in faq.message.lower()
+    mock_rag.assert_awaited_once()
+
+
 # ---------------------------------------------------------------------------
 # 10. test_rag_query_chroma_failure_returns_fallback
 # ---------------------------------------------------------------------------
