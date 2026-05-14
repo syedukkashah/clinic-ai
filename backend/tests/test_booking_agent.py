@@ -10,6 +10,7 @@ from agents.booking_agent import (
     _parse_tool_call,
     _get_available_slots,
     _create_appointment,
+    _cancel_appointment,
 )
 
 
@@ -323,6 +324,34 @@ async def test_reschedule_flow_does_not_create_new_appointment():
     assert args["date"] == "2026-05-19"
     assert args["time"] == "11:00"
     assert "rescheduled successfully" in final["response"]
+
+
+@pytest.mark.anyio
+async def test_cancel_appointment_commits_on_success():
+    """Cancelling through the agent-owned session should persist the delete."""
+    class FakeSession:
+        def __init__(self):
+            self.committed = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def commit(self):
+            self.committed = True
+
+    fake_session = FakeSession()
+    with patch("agents.booking_agent.AsyncSessionLocal", return_value=fake_session), patch(
+        "agents.booking_agent.crud.delete_appointment",
+        AsyncMock(return_value=True),
+    ) as mock_delete:
+        result = await _cancel_appointment({"appointment_id": "apt-123"})
+
+    mock_delete.assert_awaited_once_with(fake_session, "apt-123")
+    assert fake_session.committed is True
+    assert "cancelled" in result.lower()
 
 
 @pytest.mark.anyio

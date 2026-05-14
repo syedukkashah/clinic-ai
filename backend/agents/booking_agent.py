@@ -853,6 +853,8 @@ async def _cancel_appointment(args: Dict) -> str:
     appointment_id = args.get("appointment_id", "")
     async with AsyncSessionLocal() as db:
         success = await crud.delete_appointment(db, appointment_id)
+        if success:
+            await db.commit()
     if success:
         return f"Appointment {appointment_id} has been cancelled."
     return f"Could not find appointment {appointment_id}."

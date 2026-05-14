@@ -9,6 +9,7 @@ Routes INFORMATIONAL queries to RAG, OPERATIONAL queries to BookingAgent.
 from __future__ import annotations
 
 import logging
+import re
 
 from agents.booking_agent import AgentResponse, booking_agent
 from agents.booking_agent import BookingAgent
@@ -29,8 +30,8 @@ PROM_AGENT_STEPS = Counter(
 
 
 def _is_abort_message(message: str) -> bool:
-    lowered = message.lower().strip()
-    return lowered in {
+    normalized = re.sub(r"[^a-z0-9\s]", "", message.lower()).strip()
+    return normalized in {
         "nvm",
         "never mind",
         "nevermind",
@@ -49,6 +50,51 @@ def _is_abort_message(message: str) -> bool:
 def _is_reschedule_or_cancel(message: str) -> bool:
     lowered = message.lower()
     return any(word in lowered for word in ("reschedule", "reschdule", "cancel appointment", "change appointment", "move appointment"))
+
+
+def _looks_like_informational_query(message: str) -> bool:
+    text = message.lower()
+    operational_words = (
+        "book",
+        "schedule",
+        "reschedule",
+        "cancel",
+        "confirm appointment",
+        "move my appointment",
+        "available",
+        "doctor",
+        "doctors",
+    )
+    informational_words = (
+        "opening hour",
+        "open",
+        "timing",
+        "clinic hour",
+        "visiting hour",
+        "policy",
+        "parking",
+        "bring",
+        "document",
+        "cnic",
+        "insurance",
+        "payment",
+        "fee",
+        "cost",
+        "medical record",
+        "prescription",
+        "pharmacy",
+        "emergency",
+        "wheelchair",
+        "accessible",
+        "language",
+        "qualification",
+        "report",
+        "digital",
+    )
+    return any(word in text for word in informational_words) and not any(
+        word in text for word in operational_words
+    )
+
 
 class AgentOrchestrator:
     """Routes incoming requests via intent classification."""
@@ -97,12 +143,17 @@ class AgentOrchestrator:
                 intent="booking_cancelled",
             )
 
-        intent = await route_intent(transcript)
-        if booking_state.get("active") and intent == "INFORMATIONAL":
-            if redis:
-                await clear_booking_state(redis, session_id)
-        elif booking_state.get("active") or _is_reschedule_or_cancel(transcript):
+        if booking_state.get("active"):
+            if _looks_like_informational_query(transcript):
+                intent = "INFORMATIONAL"
+                if redis:
+                    await clear_booking_state(redis, session_id)
+            else:
+                intent = "OPERATIONAL"
+        elif _is_reschedule_or_cancel(transcript):
             intent = "OPERATIONAL"
+        else:
+            intent = await route_intent(transcript)
 
         logger.info(
             "Orchestrator intent=%s session=%s lang=%s mode=%s",
