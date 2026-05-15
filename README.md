@@ -16,7 +16,7 @@ MediFlow is an AI-powered clinic operations platform that connects patient suppo
 
 The project was built as a realistic end-to-end healthcare operations stack: patients can chat or speak with an AI assistant, book appointments, ask clinic questions, and contact support, while clinic staff get an operational dashboard for appointments, scheduling, analytics, alerts, model health, and automation.
 
-## What We Built
+## What Was Built
 
 MediFlow includes a patient-facing AI assistant and an admin-facing clinic operations dashboard backed by a production-ready FastAPI service. The assistant can answer clinic questions through RAG, guide patients through appointment booking, remember conversation context, resolve doctor and specialty intent, check availability, and create bookings in the database.
 
