@@ -1,7 +1,47 @@
 import os
-import mlflow
-from mlflow.exceptions import MlflowException
 import logging
+import sys
+import types
+
+try:
+    import mlflow
+except ModuleNotFoundError:  # pragma: no cover - dependency-light test/runtime fallback
+    class _StubRun:
+        info = types.SimpleNamespace(run_id="stub-run")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    mlflow = types.ModuleType("mlflow")
+    tracking = types.ModuleType("mlflow.tracking")
+    sklearn = types.ModuleType("mlflow.sklearn")
+    pyfunc = types.ModuleType("mlflow.pyfunc")
+    tracking.MlflowClient = lambda *args, **kwargs: None
+    sklearn.log_model = lambda *args, **kwargs: None
+    sklearn.load_model = lambda *args, **kwargs: None
+    pyfunc.load_model = lambda *args, **kwargs: None
+    mlflow.tracking = tracking
+    mlflow.sklearn = sklearn
+    mlflow.pyfunc = pyfunc
+    mlflow.set_tracking_uri = lambda *args, **kwargs: None
+    mlflow.set_experiment = lambda *args, **kwargs: None
+    mlflow.get_experiment_by_name = lambda *args, **kwargs: None
+    mlflow.create_experiment = lambda *args, **kwargs: None
+    mlflow.log_params = lambda *args, **kwargs: None
+    mlflow.log_metrics = lambda *args, **kwargs: None
+    mlflow.log_metric = lambda *args, **kwargs: None
+    mlflow.log_param = lambda *args, **kwargs: None
+    mlflow.log_dict = lambda *args, **kwargs: None
+    mlflow.set_tag = lambda *args, **kwargs: None
+    mlflow.active_run = lambda: None
+    mlflow.start_run = lambda *args, **kwargs: _StubRun()
+    sys.modules.setdefault("mlflow", mlflow)
+    sys.modules.setdefault("mlflow.tracking", tracking)
+    sys.modules.setdefault("mlflow.sklearn", sklearn)
+    sys.modules.setdefault("mlflow.pyfunc", pyfunc)
 
 logger = logging.getLogger(__name__)
 

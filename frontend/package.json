@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "preview:admin": "vite preview --mode admin --outDir dist-admin",
     "preview:patient": "vite preview --mode patient --outDir dist-patient",
+    "test:patient-contract": "node --test tests/patient-contract.test.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

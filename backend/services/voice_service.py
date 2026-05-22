@@ -81,6 +81,8 @@ async def handle_voice_request(audio_bytes: bytes, session_id: str) -> dict:
             "audio_url": f"/static/audio/{out_filename}",
             "detected_lang": lang,
             "appointment": None,
+            "tool_calls": [],
+            "suggestedSlots": [],
         }
 
     # --- Agent ---
@@ -96,5 +98,7 @@ async def handle_voice_request(audio_bytes: bytes, session_id: str) -> dict:
         "text_response": response.message,
         "audio_url": f"/static/audio/{out_filename}",
         "detected_lang": lang,
-        "appointment": response.appointment_data,
+        "appointment": getattr(response, "appointment_data", None),
+        "tool_calls": getattr(response, "tool_calls", []),
+        "suggestedSlots": getattr(response, "suggested_slots", []),
     }

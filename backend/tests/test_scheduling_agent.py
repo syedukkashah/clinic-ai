@@ -8,7 +8,7 @@ from services.scheduling_agent import run_proactive_scheduling
 from db.models import Doctor, Patient, Appointment, Notification, OpsAlert, AppointmentStatus
 
 @pytest.mark.asyncio
-async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, mocker):
+async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, monkeypatch):
     """
     Integration test for the scheduling agent.
     - Mocks the ML service to simulate an overloaded doctor.
@@ -16,10 +16,8 @@ async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, m
     - Verifies that a notification and an ops alert are created.
     """
     # 1. Mock the ML Service Client
-    mock_ml_client = mocker.patch(
-        'services.scheduling_agent.ml_service_client',
-        new_callable=AsyncMock
-    )
+    mock_ml_client = AsyncMock()
+    monkeypatch.setattr("services.scheduling_agent.ml_service_client", mock_ml_client)
 
     # Mock patient load to return an "overloaded" forecast
     mock_ml_client.get_patient_load.return_value = {
