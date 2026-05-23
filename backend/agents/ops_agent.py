@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -40,6 +41,7 @@ from db.models import (
     OpsAlert,
     OpsAlertSeverity,
 )
+from services.agent_run_logger import providers_from_steps
 from services.llm_router import AllProvidersExhausted, llm_router
 
 logger = logging.getLogger(__name__)
@@ -691,6 +693,8 @@ class OpsMonitorAgent:
         """
         PROM_OPS_RUNS.labels(trigger=trigger).inc()
         context = context or {}
+        started_at = datetime.now(timezone.utc)
+        run_started = time.perf_counter()
 
         logger.info("OpsAgent starting — trigger=%s context=%s", trigger, context)
 
@@ -701,11 +705,13 @@ class OpsMonitorAgent:
 
         alerts_fired: List[Dict] = []
         actions_taken: List[str] = []
+        trace: List[Dict[str, Any]] = []
         conclusion = ""
 
         try:
             for step in range(self.MAX_STEPS):
                 # Pick task type: use "ops" routing (groq → gemini)
+                llm_started = time.perf_counter()
                 llm_resp = await llm_router.call(
                     messages=messages,
                     system=SYSTEM_PROMPT,
@@ -713,8 +719,10 @@ class OpsMonitorAgent:
                     tools=[{"name": t["name"], "description": t["description"],
                             "parameters": t["parameters"]} for t in TOOL_SCHEMAS],
                 )
+                llm_latency_ms = int((time.perf_counter() - llm_started) * 1000)
 
                 content = llm_resp.text if hasattr(llm_resp, "text") else str(llm_resp)
+                provider = getattr(llm_resp, "provider", "unknown")
 
                 # Check if LLM returned a tool call (JSON) or a final conclusion
                 tool_call = self._parse_tool_call(content)
@@ -722,6 +730,14 @@ class OpsMonitorAgent:
                 if tool_call is None:
                     # No tool call — this is the final CONCLUDE response
                     conclusion = content
+                    trace.append({
+                        "type": "CONCLUDE",
+                        "tool": "ops_monitor",
+                        "provider": provider,
+                        "args": {"trigger": trigger},
+                        "result": content[:500],
+                        "latencyMs": llm_latency_ms,
+                    })
                     logger.info("OpsAgent concluded after %d steps", step + 1)
                     break
 
@@ -731,6 +747,15 @@ class OpsMonitorAgent:
                     step + 1, tool_call.get("tool"), tool_call.get("args", {}),
                 )
 
+                trace.append({
+                    "type": "ACT",
+                    "tool": tool_call.get("tool"),
+                    "provider": provider,
+                    "args": tool_call.get("args", {}),
+                    "result": "Tool call selected by LLM",
+                    "latencyMs": llm_latency_ms,
+                })
+                tool_started = time.perf_counter()
                 try:
                     result = await _dispatch_tool(tool_call, db)
                 except Exception as exc:
@@ -738,6 +763,15 @@ class OpsMonitorAgent:
                     logger.error(
                         "OpsAgent tool error [%s]: %s", tool_call.get("tool"), exc
                     )
+                tool_latency_ms = int((time.perf_counter() - tool_started) * 1000)
+                trace.append({
+                    "type": "OBSERVE",
+                    "tool": tool_call.get("tool"),
+                    "provider": provider,
+                    "args": tool_call.get("args", {}),
+                    "result": json.dumps(result, default=str)[:500],
+                    "latencyMs": tool_latency_ms,
+                })
 
                 # Track side effects for return value
                 if tool_call.get("tool") == "trigger_alert" and isinstance(result, dict):
@@ -778,15 +812,43 @@ class OpsMonitorAgent:
                 severity="warning",
                 channel="ops",
             )
+            trace.append({
+                "type": "CONCLUDE",
+                "tool": "ops_monitor",
+                "provider": "none",
+                "args": {"trigger": trigger},
+                "result": conclusion,
+                "latencyMs": int((time.perf_counter() - run_started) * 1000),
+            })
 
         steps_taken = (len(messages) - 1) // 2  # each step = assistant + tool-result pair
+        clean_conclusion = conclusion.replace("CONCLUDE â†’", "").strip()
+        clean_conclusion = clean_conclusion.replace("CONCLUDE", "").replace("->", "").strip(" -:")
+        outcome = "alerted" if alerts_fired else "acted" if actions_taken else "normal"
+        await crud.create_agent_run(
+            db,
+            {
+                "agent": "ops_monitor",
+                "trigger": trigger,
+                "outcome": outcome,
+                "steps_count": len(trace),
+                "duration_ms": int((time.perf_counter() - run_started) * 1000),
+                "providers_used": providers_from_steps(trace),
+                "tool_calls": trace,
+                "summary": clean_conclusion[:500],
+                "started_at": started_at,
+                "completed_at": datetime.now(timezone.utc),
+            },
+        )
 
         return {
             "trigger": trigger,
             "steps_taken": steps_taken,
             "conclusion": conclusion.replace("CONCLUDE →", "").strip(),
+            "conclusion": clean_conclusion,
             "alerts_fired": alerts_fired,
             "actions_taken": actions_taken,
+            "tool_calls": trace,
         }
 
     # -----------------------------------------------------------------------

@@ -120,7 +120,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
-          href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Nastaliq+Urdu:wght@400;700&family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
       </head>
@@ -154,8 +154,9 @@ function Gate({ children }: { children: React.ReactNode }) {
     location.pathname === "/patient" || location.pathname.startsWith("/patient/");
   const portal = getPortal();
 
-  // If we are logged in and on a non-login page, use AppShell
-  if (portal !== "patient" && user && !isLoginPage && !isPatientSite) {
+  // Non-public admin routes render through the mission-control shell.
+  // Route-level beforeLoad still owns the unauthenticated redirect.
+  if (portal !== "patient" && !isLoginPage && !isPatientSite) {
     return <AppShell>{children}</AppShell>;
   }
 

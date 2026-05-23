@@ -49,6 +49,7 @@ from services.redis_memory import (
     RECOVERY_MSG,
 )
 from services.ml_service import ml_service_client
+from services.agent_run_logger import record_agent_run
 
 logger = logging.getLogger(__name__)
 
@@ -1201,6 +1202,31 @@ async def _run_react_loop(
     return _safe_patient_response(response_text, language)
 
 
+async def _record_booking_run(
+    *,
+    session_id: str,
+    mode: str,
+    language: str,
+    outcome: Optional[str],
+    tool_calls: List[Dict[str, Any]],
+    duration_ms: int,
+    summary: str,
+    started_at: datetime,
+) -> None:
+    await record_agent_run(
+        agent="booking_agent",
+        session_id=session_id,
+        mode=mode,
+        language=language,
+        outcome=outcome,
+        tool_calls=tool_calls,
+        duration_ms=duration_ms,
+        summary=(summary or "")[:500],
+        started_at=started_at,
+        completed_at=datetime.now(timezone.utc),
+    )
+
+
 # ── BookingAgent class (for AgentOrchestrator and voice pipeline) ─────────────
 
 class BookingAgent:
@@ -1252,8 +1278,21 @@ class BookingAgent:
         if lang is not None:
             language = lang
 
+        started_at = datetime.now(timezone.utc)
+        run_started = time.perf_counter()
+
         deterministic = await _handle_booking_state(message, session_id, self._redis, language, mode)
         if deterministic is not None:
+            await _record_booking_run(
+                session_id=session_id,
+                mode=mode,
+                language=language,
+                outcome=deterministic.intent,
+                tool_calls=deterministic.tool_calls,
+                duration_ms=int((time.perf_counter() - run_started) * 1000),
+                summary=deterministic.message,
+                started_at=started_at,
+            )
             return deterministic
 
         # Load Redis history
@@ -1301,6 +1340,17 @@ class BookingAgent:
         else:
             intent = "general_query"
 
+        await _record_booking_run(
+            session_id=session_id,
+            mode=mode,
+            language=language,
+            outcome=intent,
+            tool_calls=trace,
+            duration_ms=int((time.perf_counter() - run_started) * 1000),
+            summary=response_text,
+            started_at=started_at,
+        )
+
         return AgentResponse(
             message=response_text,
             appointment_data=metadata.get("appointment"),
@@ -1327,8 +1377,21 @@ async def process_chat_message(
     Main entry point called by api/routes/chat.py.
     Handles Redis session memory, runs ReAct loop, returns response dict.
     """
+    started_at = datetime.now(timezone.utc)
+    run_started = time.perf_counter()
+
     deterministic = await _handle_booking_state(message, user_id, redis_client, language, mode)
     if deterministic is not None:
+        await _record_booking_run(
+            session_id=user_id,
+            mode=mode,
+            language=language,
+            outcome=deterministic.intent,
+            tool_calls=deterministic.tool_calls,
+            duration_ms=int((time.perf_counter() - run_started) * 1000),
+            summary=deterministic.message,
+            started_at=started_at,
+        )
         return {
             "response": deterministic.message,
             "responseText": deterministic.message,
@@ -1364,6 +1427,18 @@ async def process_chat_message(
             await save_history(redis_client, user_id, messages)
         except Exception as e:
             logger.error("Redis save failed for %s: %s", user_id, e)
+
+    outcome = "booked" if metadata.get("appointment") else "completed"
+    await _record_booking_run(
+        session_id=user_id,
+        mode=mode,
+        language=language,
+        outcome=outcome,
+        tool_calls=trace,
+        duration_ms=int((time.perf_counter() - run_started) * 1000),
+        summary=response_text,
+        started_at=started_at,
+    )
 
     return {
         "response": response_text,

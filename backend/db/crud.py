@@ -7,6 +7,7 @@ the Pydantic response schemas exactly.
 """
 
 from __future__ import annotations
+import inspect
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from db.models import (
     Appointment,
     AppointmentStatus,
+    AgentRun,
     BookingChannel,
     DailyLoad,
     Doctor,
@@ -724,6 +726,31 @@ async def get_baseline_distribution(
     )
     rows = result.scalars().all()
     return [float(r) for r in rows] if rows else None
+
+
+async def create_agent_run(db: AsyncSession, data: Dict[str, Any]) -> AgentRun:
+    run = AgentRun(
+        agent=data["agent"],
+        session_id=data.get("session_id"),
+        mode=data.get("mode"),
+        language=data.get("language"),
+        trigger=data.get("trigger"),
+        outcome=data.get("outcome"),
+        steps_count=data.get("steps_count", 0),
+        duration_ms=data.get("duration_ms"),
+        providers_used=data.get("providers_used"),
+        tool_calls=data.get("tool_calls"),
+        summary=data.get("summary"),
+        started_at=data.get("started_at"),
+        completed_at=data.get("completed_at"),
+    )
+    added = db.add(run)
+    if inspect.isawaitable(added):
+        await added
+    flushed = db.flush()
+    if inspect.isawaitable(flushed):
+        await flushed
+    return run
 
 
 async def count_appointments_since(

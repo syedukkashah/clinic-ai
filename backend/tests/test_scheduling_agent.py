@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 from sqlalchemy.orm import Session
 from services.scheduling_agent import run_proactive_scheduling
-from db.models import Doctor, Patient, Appointment, Notification, OpsAlert, AppointmentStatus
+from db.models import AgentRun, Doctor, Patient, Appointment, Notification, OpsAlert, AppointmentStatus
 
 @pytest.mark.asyncio
 async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, monkeypatch):
@@ -76,16 +76,19 @@ async def test_scheduling_agent_reassigns_when_overloaded(db_session: Session, m
     expected_new_time = original_start_time + timedelta(hours=2)
     assert appointment.scheduled_at.replace(microsecond=0, tzinfo=None) == expected_new_time.replace(microsecond=0, tzinfo=None)
     # Verify notification was created
-    notifications = db_session.query(Notification).all()
+    notifications = db_session.query(Notification).filter(Notification.patient_id == patient.id).all()
     assert len(notifications) == 1
     assert notifications[0].patient_id == patient.id
     assert "has been moved" in notifications[0].message
     assert "to ensure a shorter wait time" in notifications[0].message
 
     # Verify ops alert was created
-    alerts = db_session.query(OpsAlert).all()
+    alerts = db_session.query(OpsAlert).filter(OpsAlert.details["appointment_id"].as_string() == appointment.id).all()
     assert len(alerts) == 1
     assert alerts[0].severity == 'warning'
     assert "Auto-reschedule due to overload" in alerts[0].message
     assert alerts[0].details["original_predicted_wait"] == 50.0
     assert alerts[0].details["appointment_id"] == appointment.id
+
+    runs = db_session.query(AgentRun).filter(AgentRun.agent == "scheduling_agent").all()
+    assert any(run.outcome == "reassigned" and run.steps_count > 0 for run in runs)

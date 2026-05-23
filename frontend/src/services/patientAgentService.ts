@@ -95,8 +95,8 @@ export async function sendPatientMessage(
     let response;
     try {
       response = await api.post("/chat", payload);
-    } catch (error: any) {
-      const status = error?.response?.status;
+    } catch (error: unknown) {
+      const status = getHttpStatus(error);
       if (status !== 404 && status !== 405 && status !== 307 && status !== 308) {
         throw error;
       }
@@ -110,9 +110,18 @@ export async function sendPatientMessage(
   } catch (error) {
     console.error("Failed to send patient message:", error);
     return {
-      responseText: "I'm having trouble connecting to the medical assistant. Please try again later.",
+      responseText:
+        "I'm having trouble connecting to the medical assistant. Please try again later.",
     };
   }
+}
+
+function getHttpStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("response" in error)) {
+    return undefined;
+  }
+  const response = (error as { response?: { status?: unknown } }).response;
+  return typeof response?.status === "number" ? response.status : undefined;
 }
 
 export async function processPatientVoice(

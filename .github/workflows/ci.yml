@@ -46,6 +46,12 @@ jobs:
           ML_SERVICE_URL: "http://localhost:8001"
         run: python -m pytest -v tests --ignore=tests/test_redis_memory.py
 
+      - name: Run patient end-to-end integration contract
+        env:
+          PYTHONPATH: .
+          ML_SERVICE_URL: "http://localhost:8001"
+        run: python -m pytest -v tests/test_patient_frontend_contract.py
+
   frontend-tests:
     name: Frontend Build & Tests
     runs-on: ubuntu-latest
@@ -68,6 +74,12 @@ jobs:
 
       - name: Run tests
         run: npm run test --if-present
+
+      - name: Run patient frontend contract tests
+        run: npm run test:patient-contract
+
+      - name: Run admin frontend contract tests
+        run: npm run test:admin-contract
 
       - name: Build frontend (Admin)
         run: npm run build:admin
@@ -557,6 +569,12 @@ jobs:
           PYTHONPATH: ml_service
           MLFLOW_TRACKING_URI: "sqlite:///ml_service/mlflow_test.db"
         run: python -m pytest -v ml_service/tests/test_mlflow_logic.py ml_service/tests/test_ml_service.py
+
+      - name: Run full ML Service regression suite
+        env:
+          PYTHONPATH: ml_service
+          MLFLOW_TRACKING_URI: "sqlite:///ml_service/mlflow_test.db"
+        run: python -m pytest -v ml_service/tests
 
       - name: Install Backend MLOps Dependencies
         run: |
