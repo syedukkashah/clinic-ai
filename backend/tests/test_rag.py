@@ -220,6 +220,61 @@ async def test_orchestrator_routes_informational_to_rag():
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_both_intent_combines_rag_and_booking():
+    """Mixed intent should return RAG context and booking output in one response."""
+    from agents.booking_agent import AgentResponse
+    from agents.orchestrator import orchestrator
+    from services.rag_service import rag_service
+
+    booking_response = AgentResponse(
+        message="Here are cardiology slots.",
+        appointment_data=None,
+        suggested_slots=[{"doctor_name": "Dr. Tariq Butt"}],
+    )
+
+    with patch("agents.orchestrator.route_intent", AsyncMock(return_value="BOTH")), \
+         patch.object(rag_service, "query", AsyncMock(return_value="Dr. Tariq Butt charges PKR 2500.")), \
+         patch("agents.orchestrator.booking_agent.run", AsyncMock(return_value=booking_response)):
+        result = await orchestrator.handle_booking(
+            "Book me Dr. Tariq Butt and also tell me his fee",
+            "test_both_intent",
+            "en",
+            "text",
+        )
+
+    assert "PKR 2500" in result.message
+    assert "Here are cardiology slots" in result.message
+    assert result.suggested_slots == [{"doctor_name": "Dr. Tariq Butt"}]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_appends_prep_info_after_confirmed_booking():
+    """Confirmed booking responses should include automatic prep guidance."""
+    from agents.booking_agent import AgentResponse
+    from agents.orchestrator import orchestrator
+    from services.rag_service import rag_service
+
+    booking_response = AgentResponse(
+        message="Appointment confirmed with Dr. Tariq Butt.",
+        appointment_data={"specialty": "cardiology", "status": "confirmed"},
+    )
+
+    with patch("agents.orchestrator.route_intent", AsyncMock(return_value="OPERATIONAL")), \
+         patch.object(rag_service, "query", AsyncMock(return_value="Bring ECG reports and a medication list.")), \
+         patch("agents.orchestrator.booking_agent.run", AsyncMock(return_value=booking_response)):
+        result = await orchestrator.handle_booking(
+            "Book me a cardiology appointment",
+            "test_prep_enrichment",
+            "en",
+            "text",
+        )
+
+    assert "Appointment confirmed" in result.message
+    assert "Preparation Reminder" in result.message
+    assert "ECG reports" in result.message
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_active_booking_can_route_faq_to_rag():
     """A stale booking state must not trap FAQ queries in the booking prompt loop."""
     from agents.orchestrator import orchestrator

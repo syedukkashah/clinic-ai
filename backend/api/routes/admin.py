@@ -371,10 +371,11 @@ async def get_ci_runs(limit: int = Query(10, ge=1, le=50)):
         async with httpx.AsyncClient(timeout=6.0) as client:
             response = await client.get(url, headers=headers, params={"per_page": limit})
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail=f"GitHub Actions unavailable: {exc}") from exc
+        raise HTTPException(status_code=501, detail=f"GitHub Actions unavailable: {exc}") from exc
 
     if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=response.text)
+        status_code = 501 if response.status_code >= 500 else response.status_code
+        raise HTTPException(status_code=status_code, detail=response.text)
 
     payload = response.json()
     return {
@@ -398,7 +399,7 @@ async def _proxy_mlflow(
 ):
     if not MLFLOW_BASE_URL.startswith(("http://", "https://")):
         raise HTTPException(
-            status_code=503,
+            status_code=501,
             detail=f"MLflow HTTP API unavailable for tracking URI {MLFLOW_BASE_URL}",
         )
 
@@ -407,10 +408,11 @@ async def _proxy_mlflow(
         async with httpx.AsyncClient(timeout=4.0) as client:
             response = await client.request(method, url, params=params, json=json_payload)
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail=f"MLflow unavailable: {exc}") from exc
+        raise HTTPException(status_code=501, detail=f"MLflow unavailable: {exc}") from exc
 
     if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=response.text)
+        status_code = 501 if response.status_code >= 500 else response.status_code
+        raise HTTPException(status_code=status_code, detail=response.text)
     return response.json()
 
 

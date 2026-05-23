@@ -111,3 +111,83 @@ Languages: Urdu, English
 Consultation fee: PKR 2000
 Typical consult time: 14 minutes
 Available: Monday to Saturday 9am to 5pm
+
+Doctor Availability and Wait Time Guide
+
+This section helps patients understand expected waiting times and
+the best way to book each doctor.
+
+Dr. Ahmed Raza — General Medicine
+Best for: Diabetes, hypertension, fever, general checkup
+Walk-in availability: Good. Expect 20 to 30 minutes wait off-peak.
+Advance booking recommended: Yes for specific time preference.
+Typical booked appointment wait: 5 to 15 minutes.
+
+Dr. Sara Malik — General Medicine
+Best for: Female patients, nutrition, preventive care
+Walk-in availability: Moderate. Expect 25 to 40 minutes off-peak.
+Note: Preferred by female patients — slightly higher demand.
+Typical booked appointment wait: 5 to 15 minutes.
+
+Dr. Kamran Iqbal — General Medicine
+Best for: Elderly patients, chronic disease follow-ups, Punjabi speakers
+Walk-in availability: Good. Typically less busy than Dr. Raza and Dr. Malik.
+Advance booking recommended: Especially for elderly patients.
+Typical booked appointment wait: 5 to 10 minutes.
+
+Dr. Nadia Hussain — Cardiology
+Best for: Complex cardiac cases, heart failure, arrhythmia
+Walk-in availability: Very limited. She is the most in-demand doctor
+at MediFlow. Walk-ins are often turned away.
+Advance booking required: Book at least 3 days in advance.
+Typical booked appointment wait: 15 to 25 minutes due to complex cases.
+Alternative: Dr. Tariq Butt for less complex cardiac cases.
+
+Dr. Tariq Butt — Cardiology
+Best for: Preventive cardiology, blood pressure, cholesterol
+Walk-in availability: Moderate. Better walk-in option than Dr. Hussain.
+Advance booking recommended: Book 1 to 2 days ahead for preferred time.
+Typical booked appointment wait: 10 to 20 minutes.
+
+Dr. Ayesha Khan — Pediatrics
+Best for: Newborns, infants, childhood infections, vaccinations
+Walk-in availability: Very limited. Walk-in wait often 60 minutes or more.
+She is the most in-demand pediatrician at MediFlow.
+Advance booking strongly recommended.
+Alternative: Dr. Bilal Chaudhry has shorter waiting times.
+Typical booked appointment wait: 15 to 30 minutes.
+
+Dr. Bilal Chaudhry — Pediatrics
+Best for: Childhood asthma, nutrition, school health, Pashto speakers
+Walk-in availability: Good. Better walk-in option than Dr. Ayesha Khan.
+Available Tuesday to Sunday — note he is NOT available on Mondays.
+Typical booked appointment wait: 5 to 15 minutes.
+
+Dr. Zara Siddiqui — Dermatology
+Best for: Acne, eczema, psoriasis, hair loss, cosmetic procedures
+Walk-in availability: Moderate. Starts at 11am.
+Typical booked appointment wait: 10 to 15 minutes.
+
+Dr. Usman Qureshi — Dermatology
+Best for: Fungal infections, general skin, wound care
+Walk-in availability: Good. Less demand than Dr. Siddiqui.
+Available Monday to Friday only — not available weekends.
+Typical booked appointment wait: 5 to 10 minutes.
+
+Dr. Hina Javed — Orthopedics
+Best for: Joint replacement, spine, sports injuries, fractures
+Walk-in availability: Moderate.
+Advance booking recommended for complex cases with imaging.
+Typical booked appointment wait: 10 to 20 minutes.
+
+Dr. Faisal Sheikh — Orthopedics
+Best for: Physiotherapy coordination, bone density, fracture management
+Walk-in availability: Good. Often less busy than Dr. Hina Javed.
+Good choice if you need a physiotherapy referral.
+Typical booked appointment wait: 10 to 15 minutes.
+
+Referral Recommendations:
+If you are unsure which specialist to see, book General Medicine first.
+The General Medicine doctor will examine you and provide a formal
+referral letter to the appropriate specialist. This is especially
+recommended for first-time specialist visits.
