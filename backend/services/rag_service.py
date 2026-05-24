@@ -144,6 +144,13 @@ class RAGService:
         self._embed_fn = None
         self._doc_chunks = None
 
+    def _reset_persisted_store(self) -> None:
+        """Drop only the local Chroma cache when persisted metadata is unusable."""
+        self._client = None
+        self._collection = None
+        shutil.rmtree(CHROMA_PERSIST, ignore_errors=True)
+        CHROMA_PERSIST.mkdir(parents=True, exist_ok=True)
+
     def _init_client(self) -> None:
         """Lazy-initialize ChromaDB client and embedding function."""
         if self._client is not None:
@@ -168,11 +175,24 @@ class RAGService:
                 self._client.delete_collection(COLLECTION_NAME)
             except Exception:
                 pass
-            self._collection = self._client.create_collection(
-                name=COLLECTION_NAME,
-                embedding_function=self._embed_fn,
-                metadata={"hnsw:space": "cosine"}
-            )
+            try:
+                self._collection = self._client.create_collection(
+                    name=COLLECTION_NAME,
+                    embedding_function=self._embed_fn,
+                    metadata={"hnsw:space": "cosine"}
+                )
+            except Exception as rebuild_exc:
+                logger.warning(
+                    "RAG: persisted Chroma store is incompatible, resetting cache: %s",
+                    rebuild_exc,
+                )
+                self._reset_persisted_store()
+                self._client = chromadb.PersistentClient(path=str(CHROMA_PERSIST))
+                self._collection = self._client.create_collection(
+                    name=COLLECTION_NAME,
+                    embedding_function=self._embed_fn,
+                    metadata={"hnsw:space": "cosine"}
+                )
 
     def ensure_collection_populated(self) -> None:
         """
@@ -184,6 +204,8 @@ class RAGService:
             count = self._collection.count()
         except Exception as exc:
             logger.warning("RAG: collection count failed, rebuilding: %s", exc)
+            self._reset_persisted_store()
+            self._init_client()
             count = 0
         if count == 0:
             logger.info("RAG: collection empty, auto-ingesting clinic documents...")
@@ -285,6 +307,7 @@ class RAGService:
         source_boosts = {
             "clinic_overview": ("hour", "timing", "open", "sunday", "emergency", "pharmacy", "parking", "language", "department"),
             "doctor_profiles": ("doctor", "dr", "fee", "qualification", "available", "specialist", "specialty", "dermatologist", "cardiologist"),
+            "symptom_specialty_guide": ("symptom", "pain", "fever", "cough", "chest", "knee", "child", "doctor", "specialty", "see"),
             "policies": ("policy", "cancel", "reschedule", "walk", "record", "prescription", "photo", "attendant", "fee"),
             "visiting_guidelines": ("bring", "document", "cnic", "parking", "visitor", "attendant", "wheelchair", "accessibility"),
         }
@@ -402,7 +425,13 @@ class RAGService:
             "Please call 0800-MEDIFLOW."
         )
 
-    async def query(self, user_question: str, language: str = "en", mode: str = "text") -> str:
+    async def query(
+        self,
+        user_question: str,
+        language: str = "en",
+        mode: str = "text",
+        conversation_context: list[dict] | None = None,
+    ) -> str:
         """
         Retrieve top-K relevant chunks and generate a grounded LLM answer.
         Returns the response string. Never raises — always returns something.
@@ -425,29 +454,104 @@ class RAGService:
         )
 
         lang_instruction = (
-            "Respond in Urdu (Arabic script) since the patient wrote in Urdu."
-            if language == "ur"
-            else "Respond in English."
+            'Respond in Urdu (Arabic script) since the patient wrote in Urdu. '
+            'Use natural, conversational Urdu. Do not mix in English words.'
+            if language == 'ur'
+            else 'Respond in English. Be warm and conversational.'
         )
 
-        # Voice responses must be short for TTS latency budgets, with no markdown.
+        context_summary = ''
+        if conversation_context:
+            relevant_turns = [
+                m for m in conversation_context
+                if isinstance(m, dict)
+                and m.get('role') in ('user', 'assistant')
+                and 'content' in m
+                and isinstance(m['content'], str)
+            ][-4:]
+            if relevant_turns:
+                lines = []
+                for m in relevant_turns:
+                    speaker = 'Patient' if m['role'] == 'user' else 'Assistant'
+                    content = m['content'][:120].replace('\n', ' ')
+                    lines.append(f'{speaker}: {content}')
+                context_summary = (
+                    '\n\nRECENT CONVERSATION (use this for context only, '
+                    'do not repeat it back):\n'
+                    + '\n'.join(lines)
+                    + '\n'
+                )
+
+        sources = [entry["source"] for entry in entries]
+        top_source = sources[0] if sources else 'default'
+
+        source_instructions = {
+            'doctor_profiles': (
+                'You are answering about a specific doctor. Include their specialty, '
+                'what they treat, fee, and availability. Be warm and informative. '
+                'Maximum 5 sentences.'
+            ),
+            'preparation_instructions': (
+                'You are giving pre-appointment preparation instructions. '
+                'Format your answer as a short numbered list of 3 to 5 practical steps. '
+                'Be specific and friendly.'
+            ),
+            'symptom_specialty_guide': (
+                'You are helping the patient find the right doctor. '
+                'Name the recommended specialty and 1 or 2 specific doctors. '
+                'Mention the fee. Offer to check available slots. '
+                'Maximum 4 sentences.'
+            ),
+            'faqs': (
+                'Give a direct, friendly answer. '
+                'If a fee or time is mentioned in the context, include it. '
+                'Maximum 3 sentences.'
+            ),
+            'policies': (
+                'State the policy clearly and specifically. '
+                'Include any fees or time windows mentioned in the context. '
+                'Maximum 3 sentences.'
+            ),
+            'insurance_payments': (
+                'Answer the insurance or payment question directly. '
+                'List specific options from the context. '
+                'Maximum 4 sentences.'
+            ),
+            'emergency_guidance': (
+                'This is an emergency guidance question. '
+                'Be clear, calm, and direct. '
+                'If the symptom is a genuine emergency, say so clearly first '
+                'and provide 1122 or the emergency line. '
+                'Do not bury the emergency instruction.'
+            ),
+            'default': (
+                'Be helpful, friendly, and specific to the patient question. '
+                'Maximum 4 sentences.'
+            ),
+        }
+
+        response_style = source_instructions.get(
+            top_source,
+            source_instructions['default']
+        )
+
         if mode == "voice":
-            sentence_constraint = "Respond in maximum 2 sentences. DO NOT use markdown, bullet points, or special formatting. Use plain conversational language."
-        else:
-            sentence_constraint = "Keep your response to 1 to 3 short sentences. Do not use markdown, bullet points, JSON, code blocks, or special formatting."
+            response_style += " Respond in maximum 2 sentences. Do not use markdown or bullets."
 
-        prompt = f"""You are a professional MediFlow clinic assistant.
-Your only source of information is the provided CONTEXT.
-If the CONTEXT contains relevant facts, answer from those facts even when wording differs from the patient's question.
-If the CONTEXT does not contain the answer, say exactly: "I don't have that specific information. Please call 0800-MEDIFLOW."
-Do not guess, invent policies, expose sources, mention chunks, or mention the retrieval system.
-{sentence_constraint}
-Be friendly, empathetic, and clear. Answer the patient's question directly first.
-{lang_instruction}
+        prompt = f"""You are MediFlow clinic assistant — a warm, knowledgeable
+receptionist at a Pakistani medical clinic.
 
---- CONTEXT ---
+RULES:
+- Answer ONLY using the CLINIC DOCUMENTS below.
+- If the documents do not contain the answer, say:
+  "I don't have that specific information. Please call 0800-MEDIFLOW."
+- Never guess or make up fees, doctor names, or policies.
+- Never mention that you are using documents or a knowledge base.
+- {response_style}
+- {lang_instruction}
+{context_summary}
+CLINIC DOCUMENTS:
 {context}
----------------
 
 PATIENT QUESTION: {user_question}
 

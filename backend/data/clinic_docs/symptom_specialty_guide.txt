@@ -1,0 +1,149 @@
+MediFlow Symptom to Specialty Guide
+
+Use this guide to find the right doctor for your symptoms.
+If you are unsure which specialty to see, describe your symptom to the
+assistant and it will recommend the right doctor for you.
+
+────────────────────────────────────────────
+CHEST, HEART, AND BLOOD PRESSURE SYMPTOMS
+────────────────────────────────────────────
+
+Symptoms: chest pain, chest tightness, heart palpitations, irregular
+heartbeat, shortness of breath during activity, high blood pressure,
+high cholesterol, dizziness, leg swelling, history of heart attack.
+
+Recommended specialty: Cardiology
+
+Best first choice: Dr. Tariq Butt — shorter wait time, available Monday
+to Saturday 9am to 4pm, consultation fee PKR 2500. Good for preventive
+cardiology, blood pressure, and cholesterol management.
+
+For complex or urgent cardiac cases: Dr. Nadia Hussain — Pakistan's most
+experienced cardiologist at MediFlow with 18 years experience and a
+Fellowship from London Royal College. Specializes in interventional
+cardiology, heart failure, and arrhythmia. Very high demand — book at
+least 3 days in advance. Fee PKR 3000.
+
+Emergency warning: if you have sudden severe chest pain, pain radiating
+to the left arm or jaw, cold sweats, or difficulty breathing — do NOT
+book an appointment. Call 1122 immediately or go to the nearest hospital
+emergency room. This is a medical emergency.
+
+────────────────────────────────────────────
+GENERAL ILLNESS AND EVERYDAY HEALTH
+────────────────────────────────────────────
+
+Symptoms: fever, cough, cold, sore throat, body aches, fatigue,
+headache, diabetes management, routine prescriptions, blood pressure
+monitoring, general health checkup, weight management, general weakness,
+stomach pain, nausea, vomiting, diarrhea, urinary symptoms.
+
+Recommended specialty: General Medicine
+
+Dr. Ahmed Raza — 15 years experience, specializes in diabetes and
+hypertension. Available Monday to Saturday 9am to 6pm. Fee PKR 1000.
+Recommended for chronic disease management and routine checkups.
+
+Dr. Sara Malik — specializes in women's health, nutrition, and
+preventive care. Available Monday to Saturday 10am to 7pm. Fee PKR 1000.
+Recommended for female patients and nutrition consultations.
+
+Dr. Kamran Iqbal — specializes in elderly care and chronic disease
+follow-ups. Speaks Punjabi in addition to Urdu and English. Available
+Monday to Friday 9am to 5pm. Fee PKR 1000. Recommended for older
+patients and patients with multiple ongoing conditions.
+
+Walk-in friendly: General Medicine has the highest walk-in availability.
+Expect 20 to 40 minute wait for walk-ins during off-peak hours.
+
+────────────────────────────────────────────
+CHILDREN AND INFANT HEALTH
+────────────────────────────────────────────
+
+Symptoms in children: fever, cold, cough, ear infection, stomach pain,
+vomiting, diarrhea, skin rash, growth concerns, vaccination schedule,
+asthma, nutritional problems, behavioral concerns, school health.
+
+Recommended specialty: Pediatrics
+
+Children under 12 are strongly recommended to see a pediatrician, not
+a general medicine doctor.
+
+Dr. Ayesha Khan — 14 years experience, specializes in newborn care,
+childhood infections, and vaccinations. Very high demand. Available
+Monday to Saturday 9am to 6pm. Fee PKR 1500.
+Important: Dr. Ayesha Khan is very popular. Walk-in wait is often 60
+minutes or more. Booking an appointment in advance is strongly
+recommended for her.
+
+Dr. Bilal Chaudhry — specializes in childhood asthma, nutritional
+disorders, and school health issues. Speaks Pashto in addition to Urdu
+and English. Available Tuesday to Sunday 10am to 7pm. Fee PKR 1200.
+Good alternative to Dr. Ayesha Khan with shorter waiting times.
+
+────────────────────────────────────────────
+SKIN AND HAIR CONDITIONS
+────────────────────────────────────────────
+
+Symptoms: acne, pimples, skin rash, eczema, psoriasis, hair loss,
+dandruff, fungal skin infection, nail infection, cosmetic skin concerns,
+dark spots, pigmentation, warts, wound care, dry skin.
+
+Recommended specialty: Dermatology
+
+Dr. Zara Siddiqui — 11 years experience, handles acne, eczema,
+psoriasis, hair loss, and cosmetic procedures. Available Monday to
+Saturday 11am to 7pm. Fee PKR 1500.
+
+Dr. Usman Qureshi — handles general dermatology, fungal infections,
+and wound care. Available Monday to Friday 9am to 5pm. Fee PKR 1200.
+Good choice for straightforward skin and nail conditions.
+
+────────────────────────────────────────────
+BONE, JOINT, AND MUSCLE CONDITIONS
+────────────────────────────────────────────
+
+Symptoms: joint pain, knee pain, back pain, neck pain, shoulder pain,
+bone fracture, sports injury, muscle strain, arthritis, spine problems,
+difficulty walking, post-surgery recovery, physiotherapy referral needed,
+bone density concerns.
+
+Recommended specialty: Orthopedics
+
+Dr. Hina Javed — 16 years experience, specializes in joint replacement,
+sports injuries, spine disorders, and fractures. Available Monday to
+Saturday 10am to 6pm. Fee PKR 2500.
+
+Dr. Faisal Sheikh — specializes in physiotherapy referrals, bone density
+assessment, and fracture management. Available Monday to Saturday 9am to
+5pm. Fee PKR 2000. Good choice if you need physiotherapy coordination.
+
+────────────────────────────────────────────
+WHEN YOU ARE UNSURE WHICH DOCTOR TO SEE
+────────────────────────────────────────────
+
+If you are not sure which specialty matches your symptoms, book General
+Medicine first. The General Medicine doctor will examine you and provide
+a referral to the appropriate specialist if needed. A referral letter
+from General Medicine is recommended before seeing a specialist.
+
+────────────────────────────────────────────
+BEST TIMES TO VISIT (LESS WAITING)
+────────────────────────────────────────────
+
+Peak hours with longer waits: 10am to 12pm and 3pm to 5pm daily.
+Off-peak hours with shorter waits: 9am to 10am and 5pm to 7pm.
+Least busy day: Saturday afternoon and Sunday (limited services Sunday).
+Busiest day: Monday and Wednesday mornings.
+
+Booking an appointment in advance reduces wait time significantly
+compared to walk-in. The AI assistant can check predicted wait times
+for each slot before you confirm a booking.
+
+────────────────────────────────────────────
+LANGUAGE SUPPORT BY DOCTOR
+────────────────────────────────────────────
+
+All doctors speak Urdu and English.
+Dr. Kamran Iqbal also speaks Punjabi.
+Dr. Bilal Chaudhry also speaks Pashto.

@@ -12,6 +12,16 @@ export interface SendPatientMessageInput {
 
 export interface SendPatientMessageResult {
   responseText: string;
+  response?: string;
+  detected_lang?: PatientLang;
+  detectedLang?: PatientLang;
+  appointment?: Record<string, unknown> | null;
+  appointment_data?: Record<string, unknown> | null;
+  suggestedSlots?: Array<Record<string, unknown>>;
+  slots?: Array<Record<string, unknown>>;
+  tool_calls?: Array<Record<string, unknown>>;
+  agent_trace?: Array<Record<string, unknown>>;
+  trace?: Array<Record<string, unknown>>;
 }
 
 export interface ProcessPatientVoiceInput {
@@ -24,6 +34,12 @@ export interface ProcessPatientVoiceResult {
   transcript: string;
   responseText: string;
   audioUrl?: string;
+  detected_lang?: PatientLang;
+  appointment?: Record<string, unknown> | null;
+  tool_calls?: Array<Record<string, unknown>>;
+  agent_trace?: Array<Record<string, unknown>>;
+  suggestedSlots?: Array<Record<string, unknown>>;
+  slots?: Array<Record<string, unknown>>;
 }
 
 export interface VoiceCallSocketConfig {
@@ -70,18 +86,42 @@ export async function sendPatientMessage(
   input: SendPatientMessageInput,
 ): Promise<SendPatientMessageResult> {
   try {
-    const response = await api.post("/chat/message", {
+    const payload = {
       userId: input.userId || "anonymous",
       message: input.message,
       lang: input.lang,
-    });
-    return { responseText: response.data.responseText || response.data.response };
+    };
+
+    let response;
+    try {
+      response = await api.post("/chat", payload);
+    } catch (error: unknown) {
+      const status = getHttpStatus(error);
+      if (status !== 404 && status !== 405 && status !== 307 && status !== 308) {
+        throw error;
+      }
+      response = await api.post("/chat/message", payload);
+    }
+
+    return {
+      ...response.data,
+      responseText: response.data.responseText || response.data.response,
+    };
   } catch (error) {
     console.error("Failed to send patient message:", error);
     return {
-      responseText: "I'm having trouble connecting to the medical assistant. Please try again later.",
+      responseText:
+        "I'm having trouble connecting to the medical assistant. Please try again later.",
     };
   }
+}
+
+function getHttpStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("response" in error)) {
+    return undefined;
+  }
+  const response = (error as { response?: { status?: unknown } }).response;
+  return typeof response?.status === "number" ? response.status : undefined;
 }
 
 export async function processPatientVoice(
@@ -103,6 +143,12 @@ export async function processPatientVoice(
       transcript: data.transcript,
       responseText: data.text_response,
       audioUrl: data.audio_url,
+      detected_lang: data.detected_lang,
+      appointment: data.appointment,
+      tool_calls: data.tool_calls,
+      agent_trace: data.agent_trace,
+      suggestedSlots: data.suggestedSlots,
+      slots: data.slots,
     };
   } catch (error) {
     console.error("Failed to process voice:", error);

@@ -11,11 +11,29 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediflow -d mediflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://mediflow:${POSTGRES_PASSWORD}@postgres:5432/mediflow
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   backend:
     build:
@@ -42,9 +60,12 @@ services:
       - ./ml_service/data:/ml_service/data
       - chroma_data:/app/data/chroma_db
     depends_on:
-      - postgres
-      - redis
-      - mlflow
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      mlflow:
+        condition: service_started
 
   ml_service:
     build:
@@ -59,8 +80,10 @@ services:
       - ./ml_service:/app
       - mlflow_data:/mlflow
     depends_on:
-      - postgres
-      - mlflow
+      migrate:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_started
 
   celery_worker:
     build:
@@ -79,9 +102,12 @@ services:
       - ./backend:/app
       - ./ml_service/data:/ml_service/data
     depends_on:
-      - postgres
-      - redis
-      - ml_service
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      ml_service:
+        condition: service_started
 
   celery_beat:
     build:
@@ -100,9 +126,12 @@ services:
       - ./backend:/app
       - ./ml_service/data:/ml_service/data
     depends_on:
-      - postgres
-      - redis
-      - ml_service
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      ml_service:
+        condition: service_started
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.10.2

@@ -12,6 +12,8 @@ Run with:
 import pytest
 import pytest_asyncio
 import redis.asyncio as aioredis
+from redis.exceptions import RedisError
+import time
 
 from services.redis_memory import (
     get_history,
@@ -38,10 +40,62 @@ async def redis():
     Each test gets a clean slate — all keys flushed after test.
     """
     r = await aioredis.from_url("redis://localhost:6379", decode_responses=True)
-    await r.flushdb()  # clean before test
+    try:
+        await r.flushdb()  # clean before test
+    except (OSError, RedisError):
+        await r.aclose()
+        r = InMemoryRedis()
     yield r
     await r.flushdb()  # clean after test
     await r.aclose()
+
+
+class InMemoryRedis:
+    def __init__(self):
+        self.store = {}
+        self.expiry = {}
+
+    def _expired(self, key):
+        expires_at = self.expiry.get(key)
+        if expires_at is not None and expires_at <= time.monotonic():
+            self.store.pop(key, None)
+            self.expiry.pop(key, None)
+            return True
+        return False
+
+    async def get(self, key):
+        if self._expired(key):
+            return None
+        return self.store.get(key)
+
+    async def setex(self, key, ttl, value):
+        self.store[key] = value
+        self.expiry[key] = time.monotonic() + ttl
+        return True
+
+    async def delete(self, key):
+        existed = key in self.store
+        self.store.pop(key, None)
+        self.expiry.pop(key, None)
+        return int(existed)
+
+    async def exists(self, key):
+        if self._expired(key):
+            return 0
+        return int(key in self.store)
+
+    async def ttl(self, key):
+        if self._expired(key) or key not in self.store:
+            return -2
+        return max(0, int(self.expiry[key] - time.monotonic()))
+
+    async def flushdb(self):
+        self.store.clear()
+        self.expiry.clear()
+        return True
+
+    async def aclose(self):
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

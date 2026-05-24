@@ -13,9 +13,10 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from api.routes import (
     alerts, analytics, appointments, auth, chat, doctors, health,
-    ops, predictions, scheduling,
+    ops, predictions, scheduling, admin, slots,
     voice, webrtc, twilio_voice,
 )
+import services.monitoring_service  # noqa: F401 - registers dashboard metrics
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +58,13 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(appointments.router, prefix="/api/appointments", tags=["Appointments"])
 app.include_router(doctors.router, prefix="/api/doctors", tags=["Doctors"])
+app.include_router(slots.router, prefix="/api/slots", tags=["Slots"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Predictions"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat & Voice"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Ops Monitor"])
 app.include_router(ops.router, prefix="/api/ops", tags=["Ops"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(scheduling.router, prefix="/api/schedule", tags=["Scheduling"])
 app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])

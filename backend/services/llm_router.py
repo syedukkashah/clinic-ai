@@ -55,6 +55,7 @@ async def some_agent_function():
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from itertools import cycle
 from typing import Any, Dict, List, Literal, Optional
 
@@ -97,6 +98,7 @@ class LLM_Router:
             provider: cycle(keys) for provider, keys in self._keys.items()
         }
         self._blocked_keys: Dict[str, float] = {}  # key -> expiry_timestamp
+        self._rate_limit_events: List[Dict[str, Any]] = []
         self.BLOCK_DURATION_SECONDS = 60
 
     def _load_keys(self, keys_str: str) -> List[str]:
@@ -126,10 +128,25 @@ class LLM_Router:
         del self._blocked_keys[key]
         return False
 
-    def _block_key(self, key: str):
+    def _block_key(self, key: str, provider: str = "unknown"):
         """Adds a key to the block list for a set duration."""
-        self._blocked_keys[key] = time.time() + self.BLOCK_DURATION_SECONDS
+        expiry = time.time() + self.BLOCK_DURATION_SECONDS
+        self._blocked_keys[key] = expiry
+        now = datetime.now(timezone.utc)
+        self._rate_limit_events.insert(0, {
+            "key": f"...{key[-6:]}",
+            "provider": provider,
+            "rate_limited_at": now.isoformat(),
+            "unblocked_at": datetime.fromtimestamp(expiry, tz=timezone.utc).isoformat(),
+            "duration_seconds": self.BLOCK_DURATION_SECONDS,
+            "call_count_before_limit": None,
+        })
+        self._rate_limit_events = self._rate_limit_events[:100]
         print(f"Temporarily blocking key ...{key[-4:]} for {self.BLOCK_DURATION_SECONDS} seconds.")
+
+    def get_rate_limit_events(self) -> List[Dict[str, Any]]:
+        """Returns recent per-key rate-limit events for the admin console."""
+        return list(self._rate_limit_events)
 
     async def call(
         self,
@@ -172,7 +189,7 @@ class LLM_Router:
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 429:
                         print(f"Rate limit hit for {provider} with key ...{key[-4:]}. Blocking key and retrying with next key.")
-                        self._block_key(key)
+                        self._block_key(key, provider)
                         last_error = e
                         # Continue to the next key for the same provider
                         continue

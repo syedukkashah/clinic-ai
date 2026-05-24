@@ -16,6 +16,11 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _severity_text(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw or "unknown").lower()
+
+
 # ---------------------------------------------------------------------------
 # Muhammad's existing endpoints (real crud calls)
 # ---------------------------------------------------------------------------
@@ -169,9 +174,9 @@ async def list_alerts(
     alerts = await crud.get_ops_alerts(db, limit=limit, severity=severity)
     return [
         {
-            "id": a.id,
+            "id": str(a.id),
             "message": a.message,
-            "severity": a.severity.value.lower(),
+            "severity": _severity_text(a.severity),
             "channel": a.channel,
             "agent": a.agent,
             "created_at": a.created_at.isoformat(),

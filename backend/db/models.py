@@ -201,3 +201,22 @@ class OpsAlertSeverity(enum.Enum):
     INFO = "INFO"
     WARNING = "WARNING"
     CRITICAL = "CRITICAL"
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    agent = Column(String(50), nullable=False, index=True)
+    session_id = Column(String, nullable=True, index=True)
+    mode = Column(String(30), nullable=True)
+    language = Column(String(10), nullable=True)
+    trigger = Column(String(80), nullable=True)
+    outcome = Column(String(80), nullable=True)
+    steps_count = Column(Integer, default=0)
+    duration_ms = Column(Integer, nullable=True)
+    providers_used = Column(JSON, nullable=True)
+    tool_calls = Column(JSON, nullable=True)
+    summary = Column(String, nullable=True)
+    started_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)

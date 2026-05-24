@@ -8,6 +8,7 @@ Routes INFORMATIONAL queries to RAG, OPERATIONAL queries to BookingAgent.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -15,7 +16,7 @@ from agents.booking_agent import AgentResponse, booking_agent
 from agents.booking_agent import BookingAgent
 from services.intent_router import route_intent
 from services.rag_service import rag_service
-from services.redis_memory import clear_booking_state, get_booking_state
+from services.redis_memory import clear_booking_state, get_booking_state, get_history
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from prometheus_client import Counter
@@ -27,6 +28,84 @@ PROM_AGENT_STEPS = Counter(
     "Agent tool calls",
     ["agent", "tool"]
 )
+
+
+_PREP_QUERIES = {
+    "cardiology": "preparation instructions for cardiology appointment",
+    "general": "preparation instructions for general medicine appointment",
+    "general medicine": "preparation instructions for general medicine appointment",
+    "general practice": "preparation instructions for general medicine appointment",
+    "pediatrics": "preparation instructions for pediatric children appointment",
+    "dermatology": "preparation instructions for dermatology skin appointment",
+    "orthopedics": "preparation instructions for orthopedics bone joint appointment",
+}
+
+_PREP_SEPARATOR = {
+    "en": "\n\n─────────────────────────\n📋 **Preparation Reminder**\n",
+    "ur": "\n\n─────────────────────────\n📋 **تیاری کی یاددہانی**\n",
+}
+
+
+async def _append_prep_info(
+    result: AgentResponse,
+    language: str,
+    rag_svc,
+) -> AgentResponse:
+    """
+    Append specialty preparation instructions after a fresh confirmed booking.
+
+    This is best-effort only: RAG timeout/failure must never affect booking.
+    """
+    try:
+        appt = result.appointment_data
+        if not appt:
+            return result
+
+        status = str(appt.get("status", "confirmed")).lower().strip()
+        specialty = str(appt.get("specialty", "")).lower().strip()
+
+        if status != "confirmed":
+            return result
+        if specialty not in _PREP_QUERIES:
+            return result
+        if _PREP_SEPARATOR["en"] in result.message or _PREP_SEPARATOR["ur"] in result.message:
+            return result
+
+        try:
+            prep_text = await asyncio.wait_for(
+                rag_svc.query(
+                    _PREP_QUERIES[specialty],
+                    language=language,
+                    mode="text",
+                    conversation_context=None,
+                ),
+                timeout=3.0,
+            )
+        except (asyncio.TimeoutError, Exception):
+            return result
+
+        separator = _PREP_SEPARATOR.get(language, _PREP_SEPARATOR["en"])
+        result.message = result.message + separator + prep_text
+    except Exception:
+        pass
+    return result
+
+
+def _should_offer_booking(message: str) -> bool:
+    """
+    True when an informational query is adjacent to booking intent.
+    """
+    message_lower = message.lower()
+    booking_adjacent_keywords = [
+        "doctor", "dr.", "dr ", "specialist", "appointment",
+        "cardiology", "general", "pediatric", "dermatology",
+        "orthopedic", "raza", "malik", "iqbal", "hussain",
+        "butt", "khan", "chaudhry", "siddiqui", "qureshi",
+        "javed", "sheikh", "pain", "fever", "cough", "chest",
+        "skin", "bone", "child", "baby", "bachay", "dard",
+        "bukhaar", "doctor", "meetna", "dekhna",
+    ]
+    return any(keyword in message_lower for keyword in booking_adjacent_keywords)
 
 
 def _is_abort_message(message: str) -> bool:
@@ -165,7 +244,17 @@ class AgentOrchestrator:
 
         if intent == "INFORMATIONAL":
             try:
-                response_text = await rag_service.query(transcript, language=lang, mode=mode)
+                conversation_context = await get_history(redis, session_id) if redis else []
+            except Exception:
+                conversation_context = []
+
+            try:
+                response_text = await rag_service.query(
+                    transcript,
+                    language=lang,
+                    mode=mode,
+                    conversation_context=conversation_context,
+                )
             except Exception as exc:
                 logger.exception(
                     "RAG route failed; returning safe fallback session=%s mode=%s: %s",
@@ -177,16 +266,74 @@ class AgentOrchestrator:
                     "I don't have that specific information right now. "
                     "Please call 0800-MEDIFLOW."
                 )
+
+            if mode != "voice" and _should_offer_booking(transcript):
+                response_text += (
+                    "\n\nWould you like me to check available slots?"
+                    if lang == "en"
+                    else "\n\nکیا میں آپ کے لیے دستیاب وقت چیک کروں؟"
+                )
+
             return AgentResponse(
                 message=response_text,
                 appointment_data=None,
                 intent="informational_query",
             )
 
+        if intent == "BOTH":
+            try:
+                conversation_context = await get_history(redis, session_id) if redis else []
+            except Exception:
+                conversation_context = []
+
+            rag_task = asyncio.create_task(
+                rag_service.query(
+                    transcript,
+                    language=lang,
+                    mode=mode,
+                    conversation_context=conversation_context,
+                )
+            )
+
+            PROM_AGENT_STEPS.labels(agent="booking", tool="run").inc()
+            agent = BookingAgent(redis=redis) if redis is not None else booking_agent
+            booking_task = asyncio.create_task(
+                agent.run(
+                    message=transcript,
+                    session_id=session_id,
+                    lang=lang,
+                    mode=mode,
+                )
+            )
+
+            rag_answer, booking_result = await asyncio.gather(
+                rag_task, booking_task, return_exceptions=True
+            )
+
+            if isinstance(booking_result, TypeError):
+                try:
+                    booking_result = await agent.run(transcript, session_id, lang, mode)
+                except Exception as exc:
+                    booking_result = exc
+
+            if isinstance(booking_result, Exception):
+                rag_text = rag_answer if isinstance(rag_answer, str) else (
+                    "I could not find that information. Please call 0800-MEDIFLOW."
+                )
+                return AgentResponse(message=rag_text, appointment_data=None)
+
+            if isinstance(rag_answer, Exception) or not isinstance(rag_answer, str):
+                return await _append_prep_info(booking_result, lang, rag_service)
+
+            separator = "\n\n─────────────────────────\n"
+            booking_result.message = rag_answer + separator + booking_result.message
+            return await _append_prep_info(booking_result, lang, rag_service)
+
         # OPERATIONAL -> BookingAgent
+        PROM_AGENT_STEPS.labels(agent="booking", tool="run").inc()
         try:
             agent = BookingAgent(redis=redis) if redis is not None else booking_agent
-            return await agent.run(
+            result = await agent.run(
                 message=transcript,
                 session_id=session_id,
                 lang=lang,
@@ -195,12 +342,13 @@ class AgentOrchestrator:
         except TypeError:
             # Fallback if teammate's BookingAgent uses a slightly different signature
             agent = BookingAgent(redis=redis) if redis is not None else booking_agent
-            return await agent.run(
+            result = await agent.run(
                 transcript,
                 session_id,
                 lang,
                 mode,
             )
+        return await _append_prep_info(result, lang, rag_service)
             
     async def run_ops_monitor(
         self,

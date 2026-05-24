@@ -194,6 +194,10 @@ class ChatResponse(BaseModel):
     agentId: str
     intent: Optional[str] = None
     suggestedActions: Optional[List[Dict[str, Any]]] = None
+    detected_lang: Optional[Literal["en", "ur"]] = None
+    appointment: Optional[Dict[str, Any]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    suggestedSlots: Optional[List[Dict[str, Any]]] = None
 
 
 class VoiceProcess(BaseModel):
@@ -214,6 +218,8 @@ class VoiceChatResponse(BaseModel):
     audio_url: str
     detected_lang: Literal["en", "ur"]
     appointment: Optional[Dict[str, Any]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    suggestedSlots: Optional[List[Dict[str, Any]]] = None
 
 
 class OptimizationRequest(BaseModel):

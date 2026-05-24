@@ -92,6 +92,8 @@ async def ws_voice(ws: WebSocket, session_id: str):
                     "transcript": sentence,
                     "detected_lang": lang,
                     "appointment": response.appointment_data,
+                    "tool_calls": response.tool_calls,
+                    "suggestedSlots": response.suggested_slots,
                 })
 
                 # Send audio bytes

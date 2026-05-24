@@ -19,6 +19,9 @@ concurrency:
   group: ec2-backend-production
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Deploy backend stack

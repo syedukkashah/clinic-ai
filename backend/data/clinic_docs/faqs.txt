@@ -41,3 +41,132 @@ A: Walk-ins are accepted based on slot availability. Expected wait is 30 to 90 m
 Q: What is the cancellation policy?
 A: Cancel at least 2 hours before appointment for no charge. Late cancellations
    incur a PKR 200 fee. No-shows without notice may be charged the consultation fee.
+
+Q: My appointment is in 1 hour, can I still cancel?
+A: Yes, but a PKR 200 late cancellation fee will apply since it is within
+   2 hours of your appointment time. You can cancel through the chat
+   assistant or by calling 0800-MEDIFLOW. Rescheduling is always free.
+
+Q: My appointment is in 3 hours, can I cancel for free?
+A: Yes. Cancellations made more than 2 hours before the appointment time
+   are completely free. Cancel through the chat or call 0800-MEDIFLOW.
+
+Q: I missed my appointment, what happens?
+A: Missing an appointment without any notice may result in the full
+   consultation fee being charged on your next visit. If you need to
+   cancel, please do so at least 2 hours before to avoid any charges.
+   You can rebook a new appointment through the chat.
+
+Q: Which doctor is best for diabetes?
+A: Dr. Ahmed Raza and Dr. Kamran Iqbal in General Medicine both
+   specialize in diabetes management. Dr. Ahmed Raza is available
+   Monday to Saturday and Dr. Kamran Iqbal is available Monday to Friday.
+   Both charge PKR 1000. Book through the assistant to check today's
+   available slots.
+
+Q: Which doctor should I see for high blood pressure?
+A: High blood pressure is handled by both General Medicine and
+   Cardiology. For a new diagnosis, start with General Medicine —
+   Dr. Ahmed Raza specializes in hypertension. For complex or
+   long-standing cases, Dr. Tariq Butt in Cardiology is recommended.
+
+Q: I have chest pain right now. Should I book an appointment?
+A: If you have sudden severe chest pain, pain spreading to your arm
+   or jaw, difficulty breathing, or cold sweats — this is a medical
+   emergency. Do NOT wait for an appointment. Call 1122 immediately
+   or go to the nearest hospital emergency room.
+   For mild, non-emergency chest discomfort, book Cardiology through
+   the assistant.
+
+Q: Can a child see a general medicine doctor instead of a pediatrician?
+A: Children under 12 are strongly recommended to see a pediatrician.
+   Our pediatric specialists Dr. Ayesha Khan and Dr. Bilal Chaudhry
+   are trained specifically for children's health. If Dr. Ayesha Khan
+   is fully booked, Dr. Bilal Chaudhry is a great alternative with
+   shorter waiting times.
+
+Q: How early should I arrive for my appointment?
+A: Arrive 10 minutes before your scheduled time to complete
+   registration at reception. Bring your CNIC or B-Form for children,
+   insurance card if applicable, and any previous reports or
+   prescriptions.
+
+Q: What are the least busy times to visit?
+A: The least busy times are early morning 9am to 10am and late
+   afternoon 5pm to 7pm. Peak hours with the longest waits are
+   10am to 12pm and 3pm to 5pm. Saturday afternoon is also
+   relatively quiet. Booking an appointment in advance always
+   reduces your wait compared to walking in.
+
+Q: Can I see more than one doctor in the same visit?
+A: Yes. Inform the assistant or reception when booking. We can
+   schedule both appointments on the same day. A referral letter
+   from your General Medicine doctor is recommended if you are
+   seeing a specialist for the first time.
+
+Q: I need a sick leave certificate for my employer. Can I get one?
+A: Yes. A medical certificate for work absence is issued after
+   your consultation. The fee is PKR 200. Let the doctor know
+   you need a certificate during your appointment.
+
+Q: Can I get a prescription refill without coming in?
+A: Repeat prescriptions for chronic conditions require a follow-up
+   visit every 3 months. You cannot get a new prescription without
+   seeing the doctor. Walk-in or book a quick follow-up appointment
+   through the assistant.
+
+Q: I lost my prescription. Can I get a copy?
+A: Yes. Lost prescriptions can be reissued at reception for a
+   PKR 100 administrative fee. Bring your CNIC to verify identity.
+
+Q: Does the clinic have a lab for blood tests?
+A: Yes. MediFlow has an in-house diagnostic lab for blood tests,
+   urine tests, and basic imaging. Lab tests are charged separately
+   based on the test ordered by your doctor. Fasting is required
+   for most blood tests — no food for 8 to 12 hours before the
+   test, but water is allowed.
+
+Q: Do you have a pharmacy inside the clinic?
+A: Yes. A fully stocked pharmacy is on the ground floor and is
+   open during all clinic hours. Most medications prescribed by
+   MediFlow doctors are available. Pharmacist consultation is
+   free of charge.
+
+Q: Is parking available?
+A: Yes. Free parking is available in the basement for the first
+   2 hours. After that, the charge is PKR 50 per hour.
+   Disabled parking bays are available at the ground level entrance.
+
+Q: Can elderly patients get assistance?
+A: Yes. Priority seating is reserved in the waiting area for
+   elderly and pregnant patients. Wheelchair ramps are at the
+   main entrance, the elevator provides access to all floors,
+   and accessible washrooms are on every floor. Inform reception
+   if you require mobility assistance. One attendant is permitted
+   in the consultation room for elderly patients.
+
+Q: What payment methods do you accept?
+A: We accept cash (PKR), bank transfer, JazzCash, EasyPaisa,
+   Visa and Mastercard debit or credit cards.
+   For insurance, we accept Jubilee Health, EFU Life, Adamjee,
+   State Life, Sehat Sahulat Program, Zong Sehat Card, Jazz Health,
+   and Allianz EFU.
+
+Q: How much does a general medicine appointment cost?
+A: General Medicine consultations are PKR 1000 to 1500 depending
+   on the doctor. Cardiology is PKR 2500 to 3000. Pediatrics is
+   PKR 1200 to 1500. Dermatology is PKR 1200 to 1500.
+   Orthopedics is PKR 2000 to 2500. Lab tests are charged
+   separately based on what is ordered.
+
+Q: Mujhe kaunse doctor se milna chahiye? (Which doctor should I see?)
+A: Aap apne symptoms batayein aur assistant sahi specialty suggest
+   karega. Agar aap sure nahi hain to General Medicine se shuru
+   karein — doctor examine karke zaroorat pare to specialist ko
+   refer kar denge.
+
+Q: Appointment kitni jaldi mil sakti hai? (How soon can I get an appointment?)
+A: Usi din ki appointment urgent cases ke liye available ho sakti
+   hai agar slots khali hoon. Subah 10 baje se pehle book karna
+   best hai same-day availability ke liye. Assistant abhi available
+   slots check kar sakta hai.

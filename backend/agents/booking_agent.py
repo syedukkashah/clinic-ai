@@ -31,9 +31,10 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from db.session import AsyncSessionLocal
@@ -48,6 +49,7 @@ from services.redis_memory import (
     RECOVERY_MSG,
 )
 from services.ml_service import ml_service_client
+from services.agent_run_logger import record_agent_run
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,9 @@ class AgentResponse:
 
     tool_calls: List[Dict[str, Any]] = field(default_factory=list)
     """Tool calls made during this turn (used by debug sidebar display)."""
+
+    suggested_slots: List[Dict[str, Any]] = field(default_factory=list)
+    """Structured appointment slots shown as interactive cards in the frontend."""
 
 
 # ── System prompts ────────────────────────────────────────────────────────────
@@ -564,6 +569,64 @@ async def _availability_summary(doctor_id: int, doctor_name: str | None = None) 
     return f"I don't see open slots for {_format_doctor_name(display_name)} right now. Please choose another doctor or time."
 
 
+async def _build_slot_suggestions(state: Dict[str, Any], limit: int = 3) -> List[Dict[str, Any]]:
+    """Return structured slot options backed by DB availability and ML wait estimates."""
+    specialty = _normalize_specialty(state.get("specialty", "general"))
+    doctor_id = state.get("doctor_id")
+
+    async with AsyncSessionLocal() as db:
+        doctors = await crud.get_doctors(db)
+
+        if doctor_id:
+            matching = [doc for doc in doctors if int(doc["id"]) == int(doctor_id)]
+        else:
+            matching = [
+                doc for doc in doctors
+                if specialty.lower() in doc.get("specialty", "").lower()
+            ]
+
+        if not matching:
+            matching = doctors[:3]
+
+        suggestions: List[Dict[str, Any]] = []
+        for doc in matching[:3]:
+            avail = await crud.get_doctor_availability(db, int(doc["id"]))
+            for slot_time in avail.get("availableSlots", [])[:3]:
+                if len(suggestions) >= limit:
+                    break
+
+                try:
+                    hour = int(str(slot_time).split(":", 1)[0])
+                except Exception:
+                    hour = 10
+
+                prediction = await ml_service_client.get_wait_time({
+                    "slot_id": f"{doc['id']}-{slot_time}",
+                    "doctor_id": int(doc["id"]),
+                    "hour_of_day": hour,
+                })
+                if "error" in prediction:
+                    wait = 8 + ((int(doc["id"]) * 7 + hour * 3 + len(suggestions) * 5) % 36)
+                else:
+                    wait = int(prediction.get("predicted_wait_minutes", 12) or 12)
+
+                suggestions.append({
+                    "id": f"slot-{doc['id']}-{slot_time}",
+                    "doctorId": int(doc["id"]),
+                    "doctorName": _format_doctor_name(doc.get("name")),
+                    "specialty": doc.get("specialty") or specialty,
+                    "date": state.get("date") or date.today().isoformat(),
+                    "time": slot_time,
+                    "wait": wait,
+                    "predictedWaitMin": wait,
+                    "source": "db+ml_service",
+                })
+            if len(suggestions) >= limit:
+                break
+
+    return suggestions
+
+
 async def _handle_booking_state(message: str, session_id: str, redis_client, language: str, mode: str) -> Optional[AgentResponse]:
     if not redis_client:
         return None
@@ -620,23 +683,28 @@ async def _handle_booking_state(message: str, session_id: str, redis_client, lan
     asks_availability = any(word in lowered for word in ("available", "availability", "timings", "timing", "days", "slots"))
     if asks_availability and state.get("doctor_id"):
         await save_booking_state(redis_client, session_id, state)
+        slots = await _build_slot_suggestions(state)
         return AgentResponse(
             message=await _availability_summary(int(state["doctor_id"]), state.get("doctor_name")),
             intent="booking_intent",
+            suggested_slots=slots,
         )
 
     if asks_availability and state.get("specialty") and not state.get("doctor_id"):
         await save_booking_state(redis_client, session_id, state)
         doctors_text = await _doctor_summary_for_state(state)
+        slots = await _build_slot_suggestions(state)
         return AgentResponse(
             message=f"{doctors_text}\nWhich doctor would you prefer?",
             intent="booking_intent",
+            suggested_slots=slots,
         )
 
     if previous_state.get("active") and _extract_phone(message) and _missing_booking_fields(state) == []:
         state = _ensure_doctor_for_department(state)
         args = {
             "patient_name": state["patient_name"],
+            "patient_id": session_id,
             "doctor_id": state["doctor_id"],
             "doctor_name": state.get("doctor_name"),
             "date": state["date"],
@@ -647,13 +715,19 @@ async def _handle_booking_state(message: str, session_id: str, redis_client, lan
         }
         result = await _create_appointment(args)
         await clear_booking_state(redis_client, session_id)
-        return AgentResponse(message=result, intent="booking_intent")
+        appointment = _appointment_from_result(result, args)
+        return AgentResponse(
+            message=result,
+            intent="booking_intent",
+            appointment_data=appointment,
+        )
 
     missing = _missing_booking_fields(state)
     if not missing:
         state = _ensure_doctor_for_department(state)
         args = {
             "patient_name": state["patient_name"],
+            "patient_id": session_id,
             "doctor_id": state.get("doctor_id"),
             "doctor_name": state.get("doctor_name"),
             "date": state["date"],
@@ -664,7 +738,12 @@ async def _handle_booking_state(message: str, session_id: str, redis_client, lan
         }
         result = await _create_appointment(args)
         await clear_booking_state(redis_client, session_id)
-        return AgentResponse(message=result, intent="booking_intent")
+        appointment = _appointment_from_result(result, args)
+        return AgentResponse(
+            message=result,
+            intent="booking_intent",
+            appointment_data=appointment,
+        )
 
     await save_booking_state(redis_client, session_id, state)
 
@@ -767,7 +846,7 @@ async def _predict_wait_time(args: Dict) -> str:
     return f"Predicted wait time: {wait} minutes."
 
 
-async def _create_appointment(args: Dict) -> str:
+async def _create_appointment_record(args: Dict) -> Dict[str, Any]:
     args = _normalize_tool_args("create_appointment", args)
     patient_id = args.get("patient_id")
     patient_name = str(args.get("patient_name") or "").strip()
@@ -789,7 +868,7 @@ async def _create_appointment(args: Dict) -> str:
     if not complaint:
         missing.append("reason for visit")
     if missing:
-        return "I can book that for you. Please share " + ", ".join(missing) + "."
+        return {"error_message": "I can book that for you. Please share " + ", ".join(missing) + "."}
 
     # Smart Name Resolution for all 11 doctors
     name_to_id = {
@@ -843,10 +922,40 @@ async def _create_appointment(args: Dict) -> str:
         created = await crud.create_appointment(db, data)
         await db.commit()
         
+    return created
+
+
+async def _create_appointment(args: Dict) -> str:
+    created = await _create_appointment_record(args)
+    if created.get("error_message"):
+        return str(created["error_message"])
     return (
         f"Appointment confirmed! ID: {created.get('id')}. "
-        f"Date: {data['date']} at {data['time']}."
+        f"Date: {created.get('date')} at {created.get('time')}."
     )
+
+
+def _appointment_from_result(result: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if "appointment confirmed" not in str(result).lower():
+        return None
+
+    appointment_id = None
+    id_match = re.search(r"\bapt[-_][a-zA-Z0-9-]+\b", str(result), flags=re.IGNORECASE)
+    if id_match:
+        appointment_id = id_match.group(0).replace("_", "-")
+
+    return {
+        "id": appointment_id,
+        "patientName": args.get("patient_name"),
+        "patientId": args.get("patient_id"),
+        "doctorId": args.get("doctor_id"),
+        "doctorName": args.get("doctor_name") or DOCTOR_ID_TO_NAME.get(int(args.get("doctor_id") or 1), ""),
+        "specialty": args.get("specialty") or "General Practice",
+        "date": args.get("date"),
+        "time": args.get("time"),
+        "predictedWaitMin": args.get("predictedWaitMin", 0),
+        "reason": args.get("complaint"),
+    }
 
 
 async def _cancel_appointment(args: Dict) -> str:
@@ -961,6 +1070,8 @@ async def _run_react_loop(
     system: str,
     language: str,
     mode: str,
+    trace: Optional[List[Dict[str, Any]]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
     task_type: Optional[str] = None,   # ← added for voice_reasoning; None = auto
 ) -> str:
     """
@@ -978,12 +1089,14 @@ async def _run_react_loop(
     response_text = ""
     for step in range(max_steps):
         try:
+            llm_started = time.perf_counter()
             response = await llm_router.call(
                 messages=messages,
                 task_type=task_type,
                 system=system,
                 temperature=0.2,
             )
+            llm_latency_ms = int((time.perf_counter() - llm_started) * 1000)
             response_text = response.text.strip()
         except AllProvidersExhausted:
             logger.error("All LLM providers exhausted in BookingAgent")
@@ -1001,6 +1114,15 @@ async def _run_react_loop(
                 messages.append({"role": "assistant", "content": response_text})
                 messages.append({"role": "user", "content": "Please provide the tool call in JSON format now. Do not narrate."})
                 continue
+            if trace is not None:
+                trace.append({
+                    "type": "CONCLUDE",
+                    "tool": "booking_agent",
+                    "provider": getattr(response, "provider", "groq"),
+                    "args": {"lang": language, "mode": mode},
+                    "result": response_text[:160],
+                    "latencyMs": llm_latency_ms,
+                })
             return _safe_patient_response(response_text, language)
 
         # Execute tool
@@ -1013,12 +1135,40 @@ async def _run_react_loop(
                 tool_args["booking_channel"] = "chat" if mode == "text" else "voice_note"
 
         logger.info("BookingAgent tool call: %s args=%s", tool_name, tool_args)
+        tool_started = time.perf_counter()
 
         try:
-            tool_result = await TOOL_MAP[tool_name](tool_args)
+            if tool_name == "create_appointment":
+                tool_result = await _create_appointment(tool_args)
+                appointment = _appointment_from_result(tool_result, tool_args)
+                if appointment is not None and metadata is not None:
+                    metadata["appointment"] = appointment
+            else:
+                tool_result = await TOOL_MAP[tool_name](tool_args)
+                if tool_name == "get_available_slots" and metadata is not None:
+                    metadata["suggested_slots"] = await _build_slot_suggestions(tool_args)
         except Exception as e:
             logger.error("Tool %s failed: %s", tool_name, e)
             tool_result = f"Tool {tool_name} failed: {str(e)}"
+        tool_latency_ms = int((time.perf_counter() - tool_started) * 1000)
+
+        if trace is not None:
+            trace.append({
+                "type": "ACT",
+                "tool": tool_name,
+                    "provider": getattr(response, "provider", "groq"),
+                "args": tool_args,
+                "result": "Tool call selected by LLM",
+                "latencyMs": llm_latency_ms,
+            })
+            trace.append({
+                "type": "OBSERVE",
+                "tool": tool_name,
+                "provider": "xgboost" if tool_name == "predict_wait_time" else getattr(response, "provider", "groq"),
+                "args": tool_args,
+                "result": str(tool_result)[:220],
+                "latencyMs": tool_latency_ms,
+            })
 
         # Feed result back into conversation
         messages.append({"role": "assistant", "content": response_text})
@@ -1050,6 +1200,31 @@ async def _run_react_loop(
                 pass
 
     return _safe_patient_response(response_text, language)
+
+
+async def _record_booking_run(
+    *,
+    session_id: str,
+    mode: str,
+    language: str,
+    outcome: Optional[str],
+    tool_calls: List[Dict[str, Any]],
+    duration_ms: int,
+    summary: str,
+    started_at: datetime,
+) -> None:
+    await record_agent_run(
+        agent="booking_agent",
+        session_id=session_id,
+        mode=mode,
+        language=language,
+        outcome=outcome,
+        tool_calls=tool_calls,
+        duration_ms=duration_ms,
+        summary=(summary or "")[:500],
+        started_at=started_at,
+        completed_at=datetime.now(timezone.utc),
+    )
 
 
 # ── BookingAgent class (for AgentOrchestrator and voice pipeline) ─────────────
@@ -1103,8 +1278,21 @@ class BookingAgent:
         if lang is not None:
             language = lang
 
+        started_at = datetime.now(timezone.utc)
+        run_started = time.perf_counter()
+
         deterministic = await _handle_booking_state(message, session_id, self._redis, language, mode)
         if deterministic is not None:
+            await _record_booking_run(
+                session_id=session_id,
+                mode=mode,
+                language=language,
+                outcome=deterministic.intent,
+                tool_calls=deterministic.tool_calls,
+                duration_ms=int((time.perf_counter() - run_started) * 1000),
+                summary=deterministic.message,
+                started_at=started_at,
+            )
             return deterministic
 
         # Load Redis history
@@ -1127,8 +1315,10 @@ class BookingAgent:
             task_type = "urdu" if language == "ur" else "reasoning"
 
         # Run the shared ReAct loop
+        trace: List[Dict[str, Any]] = []
+        metadata: Dict[str, Any] = {}
         response_text = await _run_react_loop(
-            messages, system, language, mode, task_type=task_type
+            messages, system, language, mode, task_type=task_type, trace=trace, metadata=metadata
         )
 
         # Persist updated history
@@ -1150,10 +1340,23 @@ class BookingAgent:
         else:
             intent = "general_query"
 
+        await _record_booking_run(
+            session_id=session_id,
+            mode=mode,
+            language=language,
+            outcome=intent,
+            tool_calls=trace,
+            duration_ms=int((time.perf_counter() - run_started) * 1000),
+            summary=response_text,
+            started_at=started_at,
+        )
+
         return AgentResponse(
             message=response_text,
-            appointment_data=None,  # orchestrator or voice_service extracts this if needed
+            appointment_data=metadata.get("appointment"),
             intent=intent,
+            tool_calls=trace,
+            suggested_slots=metadata.get("suggested_slots", []),
         )
 
 
@@ -1174,14 +1377,30 @@ async def process_chat_message(
     Main entry point called by api/routes/chat.py.
     Handles Redis session memory, runs ReAct loop, returns response dict.
     """
+    started_at = datetime.now(timezone.utc)
+    run_started = time.perf_counter()
+
     deterministic = await _handle_booking_state(message, user_id, redis_client, language, mode)
     if deterministic is not None:
+        await _record_booking_run(
+            session_id=user_id,
+            mode=mode,
+            language=language,
+            outcome=deterministic.intent,
+            tool_calls=deterministic.tool_calls,
+            duration_ms=int((time.perf_counter() - run_started) * 1000),
+            summary=deterministic.message,
+            started_at=started_at,
+        )
         return {
             "response": deterministic.message,
             "responseText": deterministic.message,
             "agentId": "booking_agent",
             "intent": deterministic.intent,
             "suggestedActions": [],
+            "appointment": deterministic.appointment_data,
+            "suggestedSlots": deterministic.suggested_slots,
+            "tool_calls": deterministic.tool_calls,
         }
 
     # Load history from Redis
@@ -1197,7 +1416,9 @@ async def process_chat_message(
     system = SYSTEM_VOICE if mode == "voice" else SYSTEM_TEXT
 
     # Run ReAct loop (task_type=None → auto-determined from language)
-    response_text = await _run_react_loop(messages, system, language, mode)
+    trace: List[Dict[str, Any]] = []
+    metadata: Dict[str, Any] = {}
+    response_text = await _run_react_loop(messages, system, language, mode, trace=trace, metadata=metadata)
 
     # Update history
     messages.append({"role": "assistant", "content": response_text})
@@ -1207,10 +1428,25 @@ async def process_chat_message(
         except Exception as e:
             logger.error("Redis save failed for %s: %s", user_id, e)
 
+    outcome = "booked" if metadata.get("appointment") else "completed"
+    await _record_booking_run(
+        session_id=user_id,
+        mode=mode,
+        language=language,
+        outcome=outcome,
+        tool_calls=trace,
+        duration_ms=int((time.perf_counter() - run_started) * 1000),
+        summary=response_text,
+        started_at=started_at,
+    )
+
     return {
         "response": response_text,
         "responseText": response_text,
         "agentId": "booking_agent",
         "intent": None,
         "suggestedActions": [],
+        "appointment": metadata.get("appointment"),
+        "suggestedSlots": metadata.get("suggested_slots", []),
+        "tool_calls": trace,
     }

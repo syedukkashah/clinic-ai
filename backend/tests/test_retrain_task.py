@@ -1,48 +1,63 @@
-import pytest
-import respx
-from httpx import Response
+from __future__ import annotations
+
 from unittest.mock import patch
-from tasks.retrain_task import run_weekly_retraining, ML_SERVICE_URL
+
+import httpx
+import pytest
+
+from tasks.retrain_task import ML_SERVICE_URL, run_weekly_retraining
+
+
+def _mock_async_client(handler):
+    real_client = httpx.AsyncClient
+
+    def factory(*args, **kwargs):
+        return real_client(transport=httpx.MockTransport(handler))
+
+    return factory
+
 
 class TestRetrainingTask:
-
-    @respx.mock
     @patch("tasks.retrain_task.INTERNAL_SECRET", "test_secret")
     @pytest.mark.asyncio
     async def test_run_weekly_retraining_success(self):
-        """Task should return success when ML service returns 200."""
-        # Mock the ML service /retrain endpoint
-        respx.post(f"{ML_SERVICE_URL}/retrain").mock(
-            return_value=Response(200, json={"status": "training_started", "job_id": "123"})
-        )
-        
-        # This function doesn't return the JSON but logs it, 
-        # so we check if the request was made correctly.
-        await run_weekly_retraining()
-        
-        assert len(respx.calls) == 1
-        assert respx.calls[0].request.headers["X-Internal-Secret"] == "test_secret"
+        requests = []
 
-    @respx.mock
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(200, json={"status": "training_started", "job_id": "123"})
+
+        with patch("tasks.retrain_task.httpx.AsyncClient", _mock_async_client(handler)):
+            await run_weekly_retraining()
+
+        assert len(requests) == 1
+        assert str(requests[0].url) == f"{ML_SERVICE_URL}/retrain"
+        assert requests[0].headers["X-Internal-Secret"] == "test_secret"
+
     @patch("tasks.retrain_task.INTERNAL_SECRET", "test_secret")
     @pytest.mark.asyncio
     async def test_run_weekly_retraining_auth_failure(self):
-        """Should handle 401 Unauthorized from ML service."""
-        respx.post(f"{ML_SERVICE_URL}/retrain").mock(
-            return_value=Response(401, json={"detail": "Unauthorized"})
-        )
-        
-        await run_weekly_retraining()
-        # It logs the error, doesn't raise
-        assert len(respx.calls) == 1
+        requests = []
 
-    @respx.mock
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(401, json={"detail": "Unauthorized"})
+
+        with patch("tasks.retrain_task.httpx.AsyncClient", _mock_async_client(handler)):
+            await run_weekly_retraining()
+
+        assert len(requests) == 1
+
     @patch("tasks.retrain_task.INTERNAL_SECRET", "test_secret")
     @pytest.mark.asyncio
     async def test_run_weekly_retraining_connection_error(self):
-        """Should handle cases where the ML service is down."""
-        respx.post(f"{ML_SERVICE_URL}/retrain").side_effect = Exception("Connection refused")
-        
-        await run_weekly_retraining()
-        # Logs the exception
-        assert len(respx.calls) == 1
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            raise httpx.ConnectError("Connection refused", request=request)
+
+        with patch("tasks.retrain_task.httpx.AsyncClient", _mock_async_client(handler)):
+            await run_weekly_retraining()
+
+        assert len(requests) == 1

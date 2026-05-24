@@ -1,7 +1,9 @@
 from sqlalchemy.orm import Session
 from db.models import Appointment, Doctor, Notification, OpsAlert
 from services.ml_service import ml_service_client
+from services.agent_run_logger import add_agent_run_to_session
 from core.logging import get_logger
+import time
 from datetime import datetime, timedelta, timezone
 UTC = timezone.utc
 from datetime import datetime, timedelta, timezone
@@ -19,6 +21,9 @@ async def run_proactive_scheduling(db: Session):
     - Reassigns appointments if necessary to reduce wait times.
     """
     logger.info("Starting proactive scheduling run...")
+    started_at = datetime.now(UTC)
+    run_started = time.perf_counter()
+    trace = []
     
     # 1. Get next 4 hours of appointments
     now = datetime.now(UTC)
@@ -32,6 +37,26 @@ async def run_proactive_scheduling(db: Session):
 
     if not upcoming_appointments:
         logger.info("No upcoming appointments to process.")
+        trace.append({
+            "type": "CONCLUDE",
+            "tool": "scheduling_agent",
+            "provider": "celery",
+            "args": {"window_hours": 4},
+            "result": "No upcoming appointments to process",
+            "latencyMs": int((time.perf_counter() - run_started) * 1000),
+        })
+        add_agent_run_to_session(
+            db,
+            agent="scheduling_agent",
+            trigger="celery_beat",
+            outcome="no_action",
+            tool_calls=trace,
+            duration_ms=int((time.perf_counter() - run_started) * 1000),
+            summary="No upcoming appointments to process",
+            started_at=started_at,
+            completed_at=datetime.now(UTC),
+        )
+        db.commit()
         return {"status": "No appointments to process"}
 
     # Group appointments by doctor
@@ -55,7 +80,24 @@ async def run_proactive_scheduling(db: Session):
             "doctor_id": doctor.id,
             "date": now.strftime("%Y-%m-%d")
         }
+        load_started = time.perf_counter()
+        trace.append({
+            "type": "ACT",
+            "tool": "predict_patient_load",
+            "provider": "xgboost",
+            "args": patient_load_payload,
+            "result": "Evaluate doctor load forecast",
+            "latencyMs": 0,
+        })
         patient_load_forecast = await ml_service_client.get_patient_load(patient_load_payload)
+        trace.append({
+            "type": "OBSERVE",
+            "tool": "predict_patient_load",
+            "provider": "xgboost",
+            "args": patient_load_payload,
+            "result": str(patient_load_forecast)[:500],
+            "latencyMs": int((time.perf_counter() - load_started) * 1000),
+        })
 
         if "error" in patient_load_forecast:
             logger.error(f"Could not get patient load for Dr. {doctor.name}. Skipping.")
@@ -76,7 +118,24 @@ async def run_proactive_scheduling(db: Session):
                     "queue_depth": len(appointments), # Simplified queue depth
                     "specialty": doctor.specialty
                 }
+                wait_started = time.perf_counter()
+                trace.append({
+                    "type": "ACT",
+                    "tool": "predict_wait_time",
+                    "provider": "xgboost",
+                    "args": wait_time_payload,
+                    "result": "Estimate wait for overloaded appointment",
+                    "latencyMs": 0,
+                })
                 wait_time_prediction = await ml_service_client.get_wait_time(wait_time_payload)
+                trace.append({
+                    "type": "OBSERVE",
+                    "tool": "predict_wait_time",
+                    "provider": "xgboost",
+                    "args": wait_time_payload,
+                    "result": str(wait_time_prediction)[:500],
+                    "latencyMs": int((time.perf_counter() - wait_started) * 1000),
+                })
 
                 if "error" in wait_time_prediction:
                     logger.error(f"Could not get wait time for appt {appt.id}. Skipping.")
@@ -97,6 +156,14 @@ async def run_proactive_scheduling(db: Session):
                         appt.doctor_id = new_slot.doctor_id # In case we switch doctors
                         db.commit()
                         reassignments += 1
+                        trace.append({
+                            "type": "ACT",
+                            "tool": "reassign_appointment",
+                            "provider": "scheduler",
+                            "args": {"appointment_id": appt.id, "doctor_id": appt.doctor_id},
+                            "result": f"Moved from {original_start_time.isoformat()} to {new_slot.start_time.isoformat()}",
+                            "latencyMs": 0,
+                        })
                         
                         # Create notification for patient
                         create_patient_notification(db, appt, original_start_time)
@@ -107,6 +174,30 @@ async def run_proactive_scheduling(db: Session):
                         logger.info(f"Successfully reassigned appointment {appt.id} to {new_slot.start_time}")
 
     logger.info(f"Scheduling run finished. Overloads detected: {overloads_detected}, Appointments reassigned: {reassignments}.")
+    summary = (
+        f"Scheduling run finished. Overloads detected: {overloads_detected}, "
+        f"Appointments reassigned: {reassignments}."
+    )
+    trace.append({
+        "type": "CONCLUDE",
+        "tool": "scheduling_agent",
+        "provider": "celery",
+        "args": {"window_hours": 4},
+        "result": summary,
+        "latencyMs": int((time.perf_counter() - run_started) * 1000),
+    })
+    add_agent_run_to_session(
+        db,
+        agent="scheduling_agent",
+        trigger="celery_beat",
+        outcome="reassigned" if reassignments else "normal",
+        tool_calls=trace,
+        duration_ms=int((time.perf_counter() - run_started) * 1000),
+        summary=summary,
+        started_at=started_at,
+        completed_at=datetime.now(UTC),
+    )
+    db.commit()
     return {"overloads_detected": overloads_detected, "appointments_reassigned": reassignments}
 
 
