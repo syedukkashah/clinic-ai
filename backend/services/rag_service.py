@@ -144,6 +144,13 @@ class RAGService:
         self._embed_fn = None
         self._doc_chunks = None
 
+    def _reset_persisted_store(self) -> None:
+        """Drop only the local Chroma cache when persisted metadata is unusable."""
+        self._client = None
+        self._collection = None
+        shutil.rmtree(CHROMA_PERSIST, ignore_errors=True)
+        CHROMA_PERSIST.mkdir(parents=True, exist_ok=True)
+
     def _init_client(self) -> None:
         """Lazy-initialize ChromaDB client and embedding function."""
         if self._client is not None:
@@ -168,11 +175,24 @@ class RAGService:
                 self._client.delete_collection(COLLECTION_NAME)
             except Exception:
                 pass
-            self._collection = self._client.create_collection(
-                name=COLLECTION_NAME,
-                embedding_function=self._embed_fn,
-                metadata={"hnsw:space": "cosine"}
-            )
+            try:
+                self._collection = self._client.create_collection(
+                    name=COLLECTION_NAME,
+                    embedding_function=self._embed_fn,
+                    metadata={"hnsw:space": "cosine"}
+                )
+            except Exception as rebuild_exc:
+                logger.warning(
+                    "RAG: persisted Chroma store is incompatible, resetting cache: %s",
+                    rebuild_exc,
+                )
+                self._reset_persisted_store()
+                self._client = chromadb.PersistentClient(path=str(CHROMA_PERSIST))
+                self._collection = self._client.create_collection(
+                    name=COLLECTION_NAME,
+                    embedding_function=self._embed_fn,
+                    metadata={"hnsw:space": "cosine"}
+                )
 
     def ensure_collection_populated(self) -> None:
         """
@@ -184,6 +204,8 @@ class RAGService:
             count = self._collection.count()
         except Exception as exc:
             logger.warning("RAG: collection count failed, rebuilding: %s", exc)
+            self._reset_persisted_store()
+            self._init_client()
             count = 0
         if count == 0:
             logger.info("RAG: collection empty, auto-ingesting clinic documents...")

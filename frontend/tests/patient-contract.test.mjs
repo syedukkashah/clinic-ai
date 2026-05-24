@@ -42,6 +42,27 @@ test("patient API service keeps all backend integration paths wired", () => {
   assert.match(service, /tool_calls/);
 });
 
+test("patient portal keeps all three booking modes visible and switchable", () => {
+  const portal = read("src/components/PatientPortal.jsx");
+  const left = read("src/components/LeftSidebar.jsx");
+  assert.match(portal, /mode,\s*setMode/);
+  assert.match(portal, /VoiceRecorder/);
+  assert.match(portal, /WebRTCCall/);
+  assert.match(left, /Text Chat/);
+  assert.match(left, /Voice Note/);
+  assert.match(left, /Live Call/);
+});
+
+test("patient portal persists language and appointment demo moments", () => {
+  const portal = read("src/components/PatientPortal.jsx");
+  const badge = read("src/components/LanguageBadge.jsx");
+  assert.match(portal, /setLang\(nextLang\)/);
+  assert.match(portal, /applyConfirmedAppointment/);
+  assert.match(portal, /setAppointment\(bookedAppointment\)/);
+  assert.match(badge, /isUrdu/);
+  assert.match(badge, /EN/);
+});
+
 test("patient portal uses real backend slots and publishes admin refresh events", () => {
   const portal = read("src/components/PatientPortal.jsx");
   assert.doesNotMatch(portal, /DEMO_SLOTS/);

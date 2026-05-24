@@ -16,6 +16,7 @@ from api.routes import (
     ops, predictions, scheduling, admin, slots,
     voice, webrtc, twilio_voice,
 )
+import services.monitoring_service  # noqa: F401 - registers dashboard metrics
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,9 @@ os.environ["TEST_DATABASE_URL"] = settings.TEST_DATABASE_URL
 
 import pytest
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -70,3 +72,41 @@ app.dependency_overrides[get_db] = override_get_db
 @pytest.fixture(scope="session")
 def client():
     return TestClient(app)
+
+
+@pytest.fixture
+async def async_client():
+    """Async HTTPX client against the FastAPI app for pre-production tests."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@pytest.fixture
+def mock_llm_router():
+    """Controlled LLM router mock for tests that must not hit real providers."""
+    from services.llm_router import LLM_Router
+
+    mock = AsyncMock(spec=LLM_Router)
+    mock.select_key.return_value = "test-key-123"
+    mock.call.return_value = MagicMock(
+        text="This is a test response.",
+        finish_reason="stop",
+        tool_call=None,
+    )
+    return mock
+
+
+@pytest.fixture
+async def seeded_db(db_session):
+    """Seed a small clinic dataset for booking and admin tests."""
+    from tests.factories import seed_clinic_data
+
+    return await seed_clinic_data(db_session)
+
+
+@pytest.fixture
+def session_id():
+    import uuid
+
+    return f"test-{uuid.uuid4().hex[:8]}"

@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 import joblib
 import numpy as np
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -46,40 +46,58 @@ from services.llm_router import AllProvidersExhausted, llm_router
 
 logger = logging.getLogger(__name__)
 
+
+def _collector_name(name: str) -> str:
+    return name[:-6] if name.endswith("_total") else name
+
+
+def _existing_collector(name: str):
+    collectors = getattr(REGISTRY, "_names_to_collectors", {})
+    return collectors.get(name) or collectors.get(_collector_name(name))
+
+
+def _counter(name: str, description: str, labels: list[str] | None = None):
+    return _existing_collector(name) or Counter(_collector_name(name), description, labels or [])
+
+
+def _gauge(name: str, description: str, labels: list[str] | None = None):
+    return _existing_collector(name) or Gauge(name, description, labels or [])
+
+
 # ---------------------------------------------------------------------------
 # Prometheus metrics emitted BY this agent
 # (metric names must match exactly what Grafana Dashboard 2 & 3 expect)
 # ---------------------------------------------------------------------------
-PROM_OPS_RUNS = Counter(
+PROM_OPS_RUNS = _counter(
     "mediflow_ops_agent_runs_total",
     "Ops Monitor Agent invocations",
     ["trigger"],
 )
-PROM_OPS_STEPS = Counter(
+PROM_OPS_STEPS = _counter(
     "mediflow_ops_agent_steps_total",
     "Tool calls made by Ops Monitor Agent",
     ["tool"],
 )
-PROM_OPS_ALERTS = Counter(
+PROM_OPS_ALERTS = _counter(
     "mediflow_ops_alerts_total",
     "Alerts triggered by Ops Monitor Agent",
     ["severity"],
 )
-PROM_OPS_RETRAINS = Counter(
+PROM_OPS_RETRAINS = _counter(
     "mediflow_retraining_triggers_total",
     "Retraining tasks enqueued",
     ["model_name", "reason_type"],
 )
-PROM_ANOMALY_SCORE = Gauge(
+PROM_ANOMALY_SCORE = _gauge(
     "mediflow_anomaly_score",
     "Isolation Forest anomaly score (lower = more anomalous)",
 )
-PROM_REASSIGN = Counter(
+PROM_REASSIGN = _counter(
     "mediflow_reassignments_total",
     "Appointment slot reassignments triggered by agents",
 )
 
-PROM_CELERY_WORKERS = Gauge(
+PROM_CELERY_WORKERS = _gauge(
     "mediflow_celery_workers_up",
     "Number of responsive Celery workers",
 )

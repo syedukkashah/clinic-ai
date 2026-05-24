@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "mediflow123"
     REDIS_URL: str = "redis://localhost:6379"
     ALLOWED_ORIGINS: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
         "http://localhost:5173,"
         "http://localhost:5174,"
         "http://127.0.0.1:5173,"

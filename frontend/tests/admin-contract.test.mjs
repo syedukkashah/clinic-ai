@@ -47,6 +47,45 @@ mediflow_request_duration_seconds_count{endpoint="/api/chat"} 3
     }
   });
 
+  it("renders the full pre-production navigation surface", () => {
+    const leftNav = readFileSync(resolve(root, "src/components/Admin/LeftNav.jsx"), "utf8");
+    [
+      "Dashboard",
+      "Appointments",
+      "Doctors & Slots",
+      "Notifications",
+      "Booking Agent",
+      "Scheduling Agent",
+      "Ops Monitor Agent",
+      "Wait Time Model",
+      "Load Forecast Model",
+      "MLflow Registry",
+      "Drift & Retraining",
+      "LLM Key Pool",
+      "Voice Pipeline",
+      "AIOps & Anomaly",
+      "DevOps / CI-CD",
+      "System Metrics",
+      "Ops Alerts",
+      "Predictions Log",
+      "Agent Run Log",
+    ].forEach((label) => assert.match(leftNav, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))));
+  });
+
+  it("keeps high-signal demo widgets wired to metrics and traces", () => {
+    const topNavbar = readFileSync(resolve(root, "src/components/Admin/TopNavbar.jsx"), "utf8");
+    const llmKeyPool = readFileSync(resolve(root, "src/components/Admin/views/LLMKeyPoolView.jsx"), "utf8");
+    const trace = readFileSync(resolve(root, "src/components/Admin/shared/ReActTrace.jsx"), "utf8");
+
+    assert.match(topNavbar, /mediflow_anomaly_score/);
+    assert.match(topNavbar, /ANOMALY/);
+    assert.match(llmKeyPool, /ALL KEYS RATE LIMITED/);
+    assert.match(llmKeyPool, /mediflow_key_pool_available/);
+    assert.match(trace, /ACT/);
+    assert.match(trace, /OBSERVE/);
+    assert.match(trace, /CONCLUDE/);
+  });
+
   it("uses real current backend routes and explicit unavailable fallbacks", () => {
     const api = readFileSync(resolve(root, "src/api/adminApi.js"), "utf8");
     assert.match(api, /getAppointments:\s*\(query = \{\}\) => request\(`\/api\/appointments\/\?/);
