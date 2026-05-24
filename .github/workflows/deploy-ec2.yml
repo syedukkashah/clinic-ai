@@ -68,9 +68,9 @@ jobs:
           test -f .env
           docker compose -f docker-compose.backend.yml config --quiet
 
-          docker compose -f docker-compose.backend.yml up -d --build redis api celery_worker celery_beat
           docker compose -f docker-compose.backend.yml run --rm api alembic upgrade head
           docker compose -f docker-compose.backend.yml run --rm api python services/rag_service.py --ingest
+          docker compose -f docker-compose.backend.yml up -d --build redis api celery_worker celery_beat
 
           if [ "$DEPLOY_ML_SERVICE" = "true" ]; then
             docker compose -f docker-compose.backend.yml --profile ml up -d --build ml_service
